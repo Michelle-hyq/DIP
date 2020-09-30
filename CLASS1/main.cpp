@@ -50,6 +50,7 @@ void test2_3_1()//»­Ô²
 	pt.x = 10;
 	pt.y = 10;
 	circle(srcMat, pt, 5, CV_RGB(255, 0, 0), 1, 8, 0);
+	namedWindow("src", WINDOW_NORMAL);
 	imshow("circle", srcMat);
 	waitKey(0);
 }
@@ -62,7 +63,9 @@ void test2_3_2()//»­Ïß
 	pt2.x = 20;
 	pt2.y = 10;
 	line(srcMat, pt1, pt2, CV_RGB(255, 0, 0), 1, 8, 0);//ºÚÉ«
+	namedWindow("src", WINDOW_NORMAL);
 	imshow("line", srcMat);
+	waitKey(0);
 }
 void test2_3_3()//»­¾ØÐÎ
 {
@@ -73,7 +76,9 @@ void test2_3_3()//»­¾ØÐÎ
 	rect.width = 3;
 	rect.height = 4;
 	rectangle(srcMat, rect, CV_RGB(255, 0, 0), 1, 8, 0);//ºÚÉ«
+	namedWindow("src", WINDOW_NORMAL);
 	imshow("rectangle", srcMat);
+	waitKey(0);
 }
 int main()
 {
