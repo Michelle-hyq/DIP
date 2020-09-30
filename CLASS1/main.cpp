@@ -43,8 +43,40 @@ void test2_2()
 	}
 
 }
+void test2_3_1()//»­Ô²
+{
+	cv::Point pt;
+	cv::Mat srcMat = imread("D://image/timg1.jpg");
+	pt.x = 10;
+	pt.y = 10;
+	circle(srcMat, pt, 5, CV_RGB(255, 0, 0), 1, 8, 0);
+	imshow("circle", srcMat);
+	waitKey(0);
+}
+void test2_3_2()//»­Ïß
+{
+	cv::Point pt1, pt2;
+	cv::Mat srcMat = imread("D://image/timg1.jpg");
+	pt1.x = 10;
+	pt1.y = 10;
+	pt2.x = 20;
+	pt2.y = 10;
+	line(srcMat, pt1, pt2, CV_RGB(255, 0, 0), 1, 8, 0);//ºÚÉ«
+	imshow("line", srcMat);
+}
+void test2_3_3()//»­¾ØÐÎ
+{
+	cv::Rect rect;
+	cv::Mat srcMat = imread("D://image/timg1.jpg");
+	rect.x = 10;
+	rect.y = 10;
+	rect.width = 3;
+	rect.height = 4;
+	rectangle(srcMat, rect, CV_RGB(255, 0, 0), 1, 8, 0);//ºÚÉ«
+	imshow("rectangle", srcMat);
+}
 int main()
 {
-	test2_2();
+	test2_3_1();
 	return 0;
 }/**/
