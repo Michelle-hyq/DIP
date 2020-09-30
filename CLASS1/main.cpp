@@ -46,42 +46,61 @@ void test2_2()
 void test2_3_1()//画圆
 {
 	cv::Point pt;
-	cv::Mat srcMat = imread("D://image/timg1.jpg");
-	pt.x = 10;
-	pt.y = 10;
-	circle(srcMat, pt, 5, CV_RGB(255, 0, 0), 1, 8, 0);
-	namedWindow("src", WINDOW_NORMAL);
+	cv::Mat srcMat = Mat::zeros(500, 500, CV_8UC3);
+	pt.x = 100;
+	pt.y = 100;
+	circle(srcMat, pt, 50, CV_RGB(255, 0, 0), 1, 8, 0);
 	imshow("circle", srcMat);
 	waitKey(0);
 }
 void test2_3_2()//画线
 {
 	cv::Point pt1, pt2;
-	cv::Mat srcMat = imread("D://image/timg1.jpg");
+	cv::Mat srcMat = Mat::zeros(500, 500, CV_8UC3);
 	pt1.x = 10;
 	pt1.y = 10;
 	pt2.x = 20;
 	pt2.y = 10;
-	line(srcMat, pt1, pt2, CV_RGB(255, 0, 0), 1, 8, 0);//黑色
-	namedWindow("src", WINDOW_NORMAL);
+	line(srcMat, pt1, pt2, CV_RGB(255, 0, 0), 1, 8, 0);//红
 	imshow("line", srcMat);
 	waitKey(0);
 }
 void test2_3_3()//画矩形
 {
 	cv::Rect rect;
-	cv::Mat srcMat = imread("D://image/timg1.jpg");
+	cv::Mat srcMat = Mat::zeros(500, 500, CV_8UC3);
 	rect.x = 10;
 	rect.y = 10;
 	rect.width = 3;
 	rect.height = 4;
-	rectangle(srcMat, rect, CV_RGB(255, 0, 0), 1, 8, 0);//黑色
-	namedWindow("src", WINDOW_NORMAL);
+	rectangle(srcMat, rect, CV_RGB(255, 0, 0), 1, 8, 0);//红色
 	imshow("rectangle", srcMat);
+	waitKey(0);
+}
+void test2_3()//画圆、直线、矩形
+{
+	cv::Point pt;
+	cv::Mat srcMat = Mat::zeros(500, 500, CV_8UC3);//生成黑色画布
+	pt.x = 100;
+	pt.y = 100;
+	circle(srcMat, pt, 50, CV_RGB(255, 0, 0), 1, 8, 0);
+	cv::Point pt1, pt2;
+	pt1.x = 20;
+	pt1.y = 250;
+	pt2.x = 400;
+	pt2.y = 100;
+	line(srcMat, pt1, pt2, CV_RGB(255, 0, 0), 1, 8, 0);//红
+	cv::Rect rect;
+	rect.x = 200;
+	rect.y = 300;
+	rect.width = 150;
+	rect.height = 80;
+	rectangle(srcMat, rect, CV_RGB(255, 0, 0), 1, 8, 0);//红色
+	imshow("circle", srcMat);
 	waitKey(0);
 }
 int main()
 {
-	test2_3_1();
+	test2_3();
 	return 0;
 }/**/
