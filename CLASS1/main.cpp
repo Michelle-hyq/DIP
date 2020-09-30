@@ -99,6 +99,12 @@ void test2_3()//画圆、直线、矩形
 	imshow("circle", srcMat);
 	waitKey(0);
 }
+void test2_4()//直方图计算
+{
+	float histgram[256];
+	cv::Mat srcMat = imread("D://image/timg1.jpg");
+
+}
 int main()
 {
 	test2_3();
