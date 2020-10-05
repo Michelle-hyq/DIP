@@ -30,7 +30,7 @@ void test1_2()//灰度图
 	imshow("src", srcMat);
 	waitKey(0);
 }
-void test1_3()//灰度图
+void test1_3()//二值化
 {
 	cv::Mat srcMat = imread("D://image/timg1.jpg");
 	int height = srcMat.rows;
