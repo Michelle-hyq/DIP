@@ -4,152 +4,99 @@
 #include <iostream>
 using namespace cv;
 using namespace std;
-// 课堂七
+// 课堂八
+//轮廓 特征判断
 cv::Mat frame;
 cv::Mat frame_out;
 VideoCapture cap;
 //--------------------------------------------------------------------------------------------//
-//练习1：通过OpenCV进行图像的旋转后，超出原尺寸的部分，会被自动裁剪，如何实现
-//不自动裁剪的图像旋转
-void test7_1()
+//练习1：寻找轮廓
+Mat srcMat, binMat, minRectMat, canny_img;
+int canny_d= 150;
+void canny_change(int, void*)
 {
-	Mat dst, src;
-	src = imread("D://image/timg6.jpg", 0);
-	namedWindow("src", WINDOW_AUTOSIZE);
-	imshow("src", src);
-	//if (src.empty()) return -1;
-	int width, height, channels, p_sum, i, j;
-	int color_temp, pt_cnt = 0;
-	height = src.rows;  //（314，316）
-	width = src.cols;
-	p_sum = width * height;
-	const cv::Point2f p1, p2, p3, p4;
-	int yuzhi = 248;
-	float x1, x2, x3, x4, y1, y2, y3, y4;
-	printf("(width,height)=(%d,%d)\n", width, height);
-	for (i = 0; i < height; i++) {//从左到右  上顶点坐标
-		uchar* data = src.ptr<uchar>(i);//第i行 纵坐标
-		for (j = 0; j < width; j++) {	//第j列 横坐标
-			color_temp = data[j];
-			//printf("gray1[%d]=%d\n",j, color_temp);
-			if (color_temp < yuzhi) {
-				pt_cnt++;
-				printf("(x,y)=(%d,%d)\n", j, i);
-				printf("gray1=%d\n", color_temp);
-				x1 = j;
-				y1 = i;
-				//cv::Point2f p1(j, i);
-				break;//(32,0)
-			}
-		}
-		if (pt_cnt == 1) break;
-	}
-	for (i = height - 1; i > 0; i--) {//下顶点 
-		uchar* data = src.ptr<uchar>(i);//第i行 纵坐标
-		for (j = 0; j < width; j++) {	//第j列 横坐标
-			color_temp = data[j];
-			//printf("gray2[%d]=%d\n", j, color_temp);
-			if (color_temp < yuzhi) {
-				pt_cnt++;
-				printf("(x,y)=(%d,%d)\n", j, i);
-				printf("gray2=%d\n", color_temp);
-				//cv::Point2f p2(j, i);
-				x2 = j;
-				y2 = i;
-				break;//(190,315)
-			}
-		}
-		if (pt_cnt == 2) break;
-	}
-	for (j = 0; j < width; j++) {//左顶点
-		for (i = 0; i < height; i++) {
-			uchar* data = src.ptr<uchar>(i);
-			color_temp = data[j];
-			if (color_temp < yuzhi) {
-				pt_cnt++;
-				printf("(x,y)=(%d,%d)\n", j, i);
-				printf("gray3=%d\n", color_temp);
-				//cv::Point2f p3(j, i);
-				x3 = j;
-				y3 = i;
-				break;//(190,315)
-			}
-		}
-		if (pt_cnt == 3) break;
-	}
-	const cv::Point2f pts1[] = {
-		//p1,p2,p3
-		cv::Point2f(x1, y1),
-		cv::Point2f(x2, y2),
-		cv::Point2f(x3, y3)/**/
-	};
-	const cv::Point2f pts2[] = {
-		cv::Point2f(0, 0),//左上
-		cv::Point2f(width - 1, height - 1),//右下
-		cv::Point2f(0, height - 1)//左下
-		//cv::Point2f(width-1, 0)//右上
-	};
-
-	Mat srcMat = imread("D://image/timg6.jpg", 1);
-	const cv::Mat affine_matrix = cv::getAffineTransform(pts1, pts2);
-	cv::warpAffine(srcMat, dst, affine_matrix, srcMat.size());
-
-	Mat dstMat;
-	float angle = -10.0;
-	float ab_angle = 10.0;
-	float scale = 1;
-	cv::Point2f center(src.cols * 0.5, src.rows * 0.5);
-    cv::Mat rot = cv::getRotationMatrix2D(center, angle, scale);
-	//获得外界四边形
-	cv::Rect bbox = cv::RotatedRect(center, dst.size(), angle).boundingRect();
-	//调整仿射矩阵参数
-	rot.at<double>(0, 2) += bbox.width / 2.0 - center.x;
-	rot.at<double>(1, 2) += bbox.height / 2.0 - center.y;
-	//仿射变换
-	cv::warpAffine(dst, dstMat, rot, bbox.size());
-	namedWindow("dst", WINDOW_AUTOSIZE);
-	imshow("dst", dst);
-	namedWindow("dstMat", WINDOW_AUTOSIZE);
-	imshow("dstMat", dstMat);
-	waitKey(0);
+	Canny(srcMat, canny_img, canny_d, 110, 3);
+	Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
+	morphologyEx(canny_img, canny_img, MORPH_CLOSE, kernel);
+	imshow("边缘滤波", canny_img);
 }
-void test7_2()
+void test8_1()
 {
-	Mat dst, src,temp;
-	Point p_start,p_end;
-	src = imread("D://image/timg7.jpg",0);
-	//Canny(src, temp, 50, 200, 3);
-	namedWindow("temp", WINDOW_AUTOSIZE);
-	imshow("temp", temp);
-	cvtColor(temp, dst, CV_GRAY2BGR);//转化边缘检测后的图为灰度图
-	//霍夫线变换
-	vector<	Vec2f > lines;
-	HoughLines(temp, lines, 1, CV_PI / 180, 250);
-	//绘制出每条线段
-	for (size_t i = 0; i < lines.size(); i++)
+	int i;
+	//vector<vector<Point>> contours;//m个<n个坐标点>
+	//第0行（第一个轮廓的n个坐标点）：[x1,y1],[x2,y2]... 向量型的点 --n个点
+	//第1行...
+	//vector<Vec4i> hierarchy;//Vec4i:n个<4个整型变量>   的向量
+	//输出轮廓的继承关系 int型[a1,b1,c1,d1],[a2,b2,c2,d2]...
+
+	//vector<Rect>像素width*height from 位置(x,y)
+	//[width x height from(x,y)]
+
+	//vector<RotatedRect>
+	//angle:0 center:[0,0] size:[0 x 0]
+	srcMat = imread("D://image/timg9.jpg",0);
+	namedWindow("原图", WINDOW_AUTOSIZE);
+	imshow("原图", srcMat);
+	//二值化
+	Mat gray_image, binary_image;
+	threshold(srcMat, binary_image, 100, 255, THRESH_BINARY);
+	imshow("binary", binary_image);
+	//查找所有轮廓
+	vector<vector<Point>> contours;//m个<n个坐标点>
+	vector<Vec4i> hireachy;//Vec4i:n个<4个整型变量>   的向量
+	//写法一
+	//findContours(binMat, contours,hireachy, RETR_TREE, CHAIN_APPROX_NONE);
+	//for (int i = 0; i < contours.size(); i++) {
+	//    drawContours(dst, contours, i, Scalar(0, 0, 255), 1, 8, hierarchy);
+	//}
+	//写法二
+	findContours(binary_image, contours, RETR_TREE, CHAIN_APPROX_NONE);
+	//定义结果图
+	Mat dstMat = Mat(srcMat.rows, srcMat.cols, CV_8UC3, Scalar(0, 0, 0));
+	//颜色表，用不同颜色画出找到的不同轮廓
+	Scalar color[] = { Scalar(0,0,255), Scalar(0,255,0), Scalar(255,0,0), Scalar(255,255,0) ,Scalar(255,0,255) };
+	//初始化周长、面积、圆形度、周径比
+	double len = 0, area = 0, roundness = 0, lenratio = 0;
+	cout << contours.size() << endl;
+	//循环找出所有符合条件的轮廓
+	for (int t = 0; t < contours.size(); t++)
 	{
-		float rho = lines[i][0], theta = lines[i][1];
-		Point pt1, pt2;
-		double a = cos(theta), b = sin(theta);
-		double x0 = a * rho, y0 = b * rho;
-		pt1.x = cvRound(x0 + 1000 * (-b));//返回与参数最接近的整数
-		pt1.y = cvRound(y0 + 1000 * (a));
-		pt2.x = cvRound(x0 + 1000 * (-b));
-		pt2.y = cvRound(y0 + 1000 * (a));
-		line(dst, pt1, pt2, Scalar(55, 100, 196), 1, LINE_AA);
-		//line(src, pt1, pt2, Scalar(255, 255, 255), 1, LINE_AA);
-		/*if (i == 0) { p_start.x = pt1.x; p_start.y = pt1.y; }
-		else if(i== lines.size()) { p_end.x = pt2.x; p_end.y = pt2.y; }/**/
+		//条件：过滤掉小的干扰轮廓
+		Rect rect = boundingRect(contours[t]);//矩形轮廓
+		if (rect.width < 10)
+			continue;
+		//画出找到的轮廓，第t个
+		drawContours(dstMat, contours, static_cast<int>(t), Scalar(255, 255, 255), 1, 8, hireachy);
+
+		//绘制该轮廓的最小外接矩形
+		RotatedRect minrect = minAreaRect(contours[t]);
+		Point2f P[4];
+		minrect.points(P);
+		for (int i = 0; i < 4; i++) cv::line(dstMat, P[i], P[i < 3 ? i + 1 : 0], color[t%5], 1, CV_AA);
+		//cout <<P<< endl;//外接矩形尺寸
+
+		//计算面积、周长、圆形度、周径比
+		area = contourArea(contours[t]);//面积
+		len = arcLength(contours[t], true);//周长
+		roundness = (4 * CV_PI * area) / (len * len);//圆形度
+		cout << "圆形度：" << roundness << endl;
+
 	}
+	//显示结果
+	namedWindow("轮廓图", WINDOW_AUTOSIZE);
+	imshow("轮廓图", dstMat);
+	//drawContours(dstMat, contours, -1, Scalar(0, 255, 0), 1);
+	//findContours(binMat, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
+	//CV_RETR_EXTERNAL:只检测外围轮廓 CV_RETR_LIST 检测所有轮廓包括内围外围
+	//CV_CHAIN_APPROX_NONE保存边界上所有连续的轮廓点到contours向量内
+	//CV_CHAIN_APPROX_SIMPLE仅保存拐点
+	//			二值图·保存轮廓的向量·寻找模式·近似方法
+	//drawContours(dstMat, contours, -1, Scalar(0, 255, 255), 1, 8);//轮廓;
 	
-	namedWindow("原始图", WINDOW_AUTOSIZE);
-	imshow("原始图", src);
-	namedWindow("效果图", WINDOW_AUTOSIZE);
-	imshow("效果图", dst);
 	waitKey(0);
 }
 int main()
 {
-	test7_2();
+	test8_1();
 	return 0;
 }
