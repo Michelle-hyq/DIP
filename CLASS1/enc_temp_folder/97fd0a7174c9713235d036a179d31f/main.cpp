@@ -119,11 +119,6 @@ void test8_2()
 	namedWindow("Ô­Í¼", WINDOW_AUTOSIZE);
 	imshow("Ô­Í¼", srcMat);
 	gryMat = imread("D://image/timg8.jpg", 0);//»Ò¶ÈÍ¼
-	//±ßÔµÂË²¨
-	Canny(srcMat, canny_img, canny_d, 110, 3);
-	Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
-	morphologyEx(canny_img, canny_img, MORPH_CLOSE, kernel);
-	imshow("±ßÔµÂË²¨", canny_img);
 	//¶þÖµ»¯
 	Mat binary_image;
 	threshold(gryMat, binary_image, 100, 255, THRESH_BINARY);
