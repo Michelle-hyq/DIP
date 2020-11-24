@@ -113,20 +113,76 @@ void test7_1()
 	imshow("dstMat", dstMat);
 	waitKey(0);
 }
+
 void test7_2()
 {
-	Mat dst, src,temp;
-	Point p_start,p_end;
-	src = imread("D://image/timg7.jpg",0);
-	//Canny(src, temp, 50, 200, 3);
-	namedWindow("temp", WINDOW_AUTOSIZE);
-	imshow("temp", temp);
-	cvtColor(temp, dst, CV_GRAY2BGR);//转化边缘检测后的图为灰度图
+	Mat dstMat, srcMat, gryMat, binMat, cannyMat;
+	Point p_start, p_end;
+	int canny_d = 50;
+	srcMat = imread("D://image/timg7.jpg");
+	//cout << srcMat.size() << endl;
+	cvtColor(srcMat, gryMat, COLOR_BGR2GRAY);//BGR图形->灰度图
+	//canny边缘滤波 否则容易把内部误判为直线
+	Canny(srcMat, cannyMat, canny_d, 200, 3);//BGR图->边缘图
+	//threshold(cannyMat, binMat, 100, 255, THRESH_BINARY);//灰度图->二值化
 	//霍夫线变换
 	vector<	Vec2f > lines;
-	HoughLines(temp, lines, 1, CV_PI / 180, 250);
+	HoughLines(cannyMat, lines, 1, CV_PI / 180, 90);//传入二值化图像
+	cout << lines.size() << endl;
+	//定义结果图 复制
+	dstMat = Mat(srcMat.rows, srcMat.cols, CV_8UC3, Scalar(0, 0, 0));
 	//绘制出每条线段
 	for (size_t i = 0; i < lines.size(); i++)
+	{
+		float rho = lines[i][0], theta = lines[i][1];
+		Point pt1, pt2;
+		double a = cos(theta), b = sin(theta);
+		double x0 = (a * rho), y0 = b * rho;
+		pt1.x = (cv::saturate_cast<int>(x0 - 1000 * (-b)));//返回与参数最接近的整数
+		pt1.y = (cv::saturate_cast<int>(y0 - 1000 * (a)));
+		pt2.x = (cv::saturate_cast<int>(x0 + 1000 * (-b)));
+		pt2.y = (cv::saturate_cast<int>(y0 + 1000 * (a)));
+		cv::line(srcMat, pt1, pt2, Scalar(0, 0, 255), 2, CV_AA);
+		//line(src, pt1, pt2, Scalar(255, 255, 255), 1, LINE_AA);
+		//if (i == 0) { p_start.x = pt1.x; p_start.y = pt1.y; }
+		//else if(i== lines.size()) { p_end.x = pt2.x; p_end.y = pt2.y; }
+	}
+	
+	//line(srcMat, Point(p_result[0].x, p_result[0].y), Point(p_result[1].x, p_result[1].y), Scalar(0, 0, 255), 2, CV_AA);
+
+	namedWindow("原始图", WINDOW_AUTOSIZE);
+	imshow("原始图", srcMat);
+	namedWindow("cannyMat", WINDOW_AUTOSIZE);
+	imshow("cannyMat", cannyMat);
+
+	waitKey(0);
+}
+void test7_3()
+{
+	Mat dstMat, srcMat,gryMat,binMat,cannyMat;
+	Point p_start,p_end;
+	int canny_d = 50;
+	srcMat = imread("D://image/timg7.jpg");
+	//cout << srcMat.size() << endl;
+	cvtColor(srcMat, gryMat, COLOR_BGR2GRAY);//BGR图形->灰度图
+	//canny边缘滤波 否则容易把内部误判为直线
+	Canny(srcMat, cannyMat, canny_d, 200, 3);//BGR图->边缘图
+	//threshold(cannyMat, binMat, 100, 255, THRESH_BINARY);//灰度图->二值化
+	//霍夫线变换
+	vector<	Vec4i > lines;
+	HoughLinesP(cannyMat, lines, 1, CV_PI / 180, 50,50,10);//传入二值化图像
+	//定义结果图 复制
+	dstMat = Mat(srcMat.rows, srcMat.cols, CV_8UC3, Scalar(0, 0, 0));
+	//绘制出每条线段
+	for (size_t i = 0; i < lines.size(); i++)
+	{
+		Vec4i pt = lines[i];
+		line(srcMat, Point(pt[0], pt[1]), Point(pt[2], pt[3]), Scalar(0, 0, 255), 2, CV_AA);
+		//if (rect.width > 1000) {
+	}
+	//line(srcMat, Point(p_result[0].x, p_result[0].y), Point(p_result[1].x, p_result[1].y), Scalar(0, 0, 255), 2, CV_AA);
+	//line(srcMat, Point(p_result[2].x, p_result[2].y), Point(p_result[3].x, p_result[3].y), Scalar(0, 0, 255), 2, CV_AA);
+	/*for (size_t i = 0; i < lines.size(); i++)
 	{
 		float rho = lines[i][0], theta = lines[i][1];
 		Point pt1, pt2;
@@ -136,16 +192,17 @@ void test7_2()
 		pt1.y = cvRound(y0 + 1000 * (a));
 		pt2.x = cvRound(x0 + 1000 * (-b));
 		pt2.y = cvRound(y0 + 1000 * (a));
-		line(dst, pt1, pt2, Scalar(55, 100, 196), 1, LINE_AA);
+		line(dstMat, pt1, pt2, Scalar(55, 100, 196), 1, LINE_AA);
 		//line(src, pt1, pt2, Scalar(255, 255, 255), 1, LINE_AA);
-		/*if (i == 0) { p_start.x = pt1.x; p_start.y = pt1.y; }
-		else if(i== lines.size()) { p_end.x = pt2.x; p_end.y = pt2.y; }/**/
-	}
+		//if (i == 0) { p_start.x = pt1.x; p_start.y = pt1.y; }
+		//else if(i== lines.size()) { p_end.x = pt2.x; p_end.y = pt2.y; }
+	}/**/
 	
 	namedWindow("原始图", WINDOW_AUTOSIZE);
-	imshow("原始图", src);
-	namedWindow("效果图", WINDOW_AUTOSIZE);
-	imshow("效果图", dst);
+	imshow("原始图", srcMat);
+	namedWindow("灰度图", WINDOW_AUTOSIZE);
+	imshow("灰度图", gryMat);
+	
 	waitKey(0);
 }
 int main()
