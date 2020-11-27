@@ -4,209 +4,162 @@
 #include <iostream>
 using namespace cv;
 using namespace std;
-// 课堂七
-cv::Mat frame;
-cv::Mat frame_out;
-VideoCapture cap;
+//vector<vector<Point>> contours;//m个<n个坐标点>
+	//第0行（第一个轮廓的n个坐标点）：[x1,y1],[x2,y2]... 向量型的点 --n个点
+	//第1行...
+	//vector<Vec4i> hierarchy;//Vec4i:n个<4个整型变量>   的向量
+	//输出轮廓的继承关系 int型[a1,b1,c1,d1],[a2,b2,c2,d2]...
+
+	//vector<Rect>像素width*height from 位置(x,y)
+	//Rect(x,y,width,height)
+	//[width x height from(x,y)]
+
+	//vector<RotatedRect>
+	//angle:0 center:[0,0] size:[0 x 0]
 //--------------------------------------------------------------------------------------------//
-//练习1：通过OpenCV进行图像的旋转后，超出原尺寸的部分，会被自动裁剪，如何实现
-//不自动裁剪的图像旋转
-void test7_1()
+// 课堂九
+//角点检测、SIFT、HOG特征检测行人
+cv::Mat binMat, gryMat, minRectMat, canny_img,dstMat;
+int nX,nY;
+int bins = 810;
+float ref_hist[810];
+float pl_hist[810];
+float bg_hist[810];/**/
+//输入原图像、直方图、cell面积、cell边长
+void calcHOG(cv::Mat src,float* tempHist,int nAngle,int cellSize)
 {
-	Mat dst, src;
-	src = imread("D://image/timg6.jpg", 0);
-	namedWindow("src", WINDOW_AUTOSIZE);
-	imshow("src", src);
-	//if (src.empty()) return -1;
-	int width, height, channels, p_sum, i, j;
-	int color_temp, pt_cnt = 0;
-	height = src.rows;  //（314，316）
-	width = src.cols;
-	p_sum = width * height;
-	const cv::Point2f p1, p2, p3, p4;
-	int yuzhi = 248;
-	float x1, x2, x3, x4, y1, y2, y3, y4;
-	printf("(width,height)=(%d,%d)\n", width, height);
-	for (i = 0; i < height; i++) {//从左到右  上顶点坐标
-		uchar* data = src.ptr<uchar>(i);//第i行 纵坐标
-		for (j = 0; j < width; j++) {	//第j列 横坐标
-			color_temp = data[j];
-			//printf("gray1[%d]=%d\n",j, color_temp);
-			if (color_temp < yuzhi) {
-				pt_cnt++;
-				printf("(x,y)=(%d,%d)\n", j, i);
-				printf("gray1=%d\n", color_temp);
-				x1 = j;
-				y1 = i;
-				//cv::Point2f p1(j, i);
-				break;//(32,0)
-			}
-		}
-		if (pt_cnt == 1) break;
-	}
-	for (i = height - 1; i > 0; i--) {//下顶点 
-		uchar* data = src.ptr<uchar>(i);//第i行 纵坐标
-		for (j = 0; j < width; j++) {	//第j列 横坐标
-			color_temp = data[j];
-			//printf("gray2[%d]=%d\n", j, color_temp);
-			if (color_temp < yuzhi) {
-				pt_cnt++;
-				printf("(x,y)=(%d,%d)\n", j, i);
-				printf("gray2=%d\n", color_temp);
-				//cv::Point2f p2(j, i);
-				x2 = j;
-				y2 = i;
-				break;//(190,315)
-			}
-		}
-		if (pt_cnt == 2) break;
-	}
-	for (j = 0; j < width; j++) {//左顶点
-		for (i = 0; i < height; i++) {
-			uchar* data = src.ptr<uchar>(i);
-			color_temp = data[j];
-			if (color_temp < yuzhi) {
-				pt_cnt++;
-				printf("(x,y)=(%d,%d)\n", j, i);
-				printf("gray3=%d\n", color_temp);
-				//cv::Point2f p3(j, i);
-				x3 = j;
-				y3 = i;
-				break;//(190,315)
-			}
-		}
-		if (pt_cnt == 3) break;
-	}
-	const cv::Point2f pts1[] = {
-		//p1,p2,p3
-		cv::Point2f(x1, y1),
-		cv::Point2f(x2, y2),
-		cv::Point2f(x3, y3)/**/
-	};
-	const cv::Point2f pts2[] = {
-		cv::Point2f(0, 0),//左上
-		cv::Point2f(width - 1, height - 1),//右下
-		cv::Point2f(0, height - 1)//左下
-		//cv::Point2f(width-1, 0)//右上
-	};
+	int i, j;
+	Rect roi;
+	roi.width = cellSize;
+	roi.height = cellSize;
+	//计算所有像素的梯度与角度方向，统计直方图
+	Mat gx, gy;
+	Sobel(src, gx, CV_32F, 1, 0, 1);
+	Sobel(src, gy, CV_32F, 0, 1, 1);
+	
+	cv::Mat roiMat;
+	cv::Mat roiMag;
+	cv::Mat roiAgl;
 
-	Mat srcMat = imread("D://image/timg6.jpg", 1);
-	const cv::Mat affine_matrix = cv::getAffineTransform(pts1, pts2);
-	cv::warpAffine(srcMat, dst, affine_matrix, srcMat.size());
+	//默认是弧度radians，可选择角度degrees
+	Mat mag, angle;//每个像素点都有幅值和方向
+	cartToPolar(gx, gy, mag, angle, true);
+	int cont = 0;
+	for (int i = 0; i < nY; i++) {
+		for (int j = 0; j < nX; j++) {
+			cont++;
+			roi.x = j * cellSize;
+			roi.y = i * cellSize;
+			//赋值图像 ROI感兴趣的区域
+			roiMat = src(roi);
+			roiMag = mag(roi);
+			roiAgl = angle(roi);
+			//当前cell第一个像素在数组中的位置
+			int head = (i * nX + j) * nAngle;
+			//ref_hist += head;
+			
+			//计算角度直方图
+			//cell存储空间信息 不同空间有一个9维直方图
+			//第0个-8个 代表梯度角度0 20 40...160 °
+			//值表示梯度幅度
+			int cnt = 0;
+			for (int n = 0; n < roiMat.rows; n++) {
+				for (int m = 0; m < roiMat.cols; m++) {
+					cnt++;
+					float temp_mag = ( roiMag.at<float>(m, n));//像素点的幅度值mag
+					int temp_ang = (int)( roiAgl.at<float>(m, n));
+					float show_ang = roiAgl.at<float>(m, n);
+					//cout << "\temp_ang: " << show_ang << endl;
+					
+					if (temp_ang % 40 == 0)
+						tempHist[head + temp_ang / 40] = temp_mag;
+						//*(ref_hist + temp_ang / 40) = temp_mag;
+					else if(temp_ang/40 < 9){
+						tempHist[head + temp_ang / 40]= (float)(40 - (temp_ang % 40)) / 40.0 * temp_mag;
+						tempHist[head + ((temp_ang / 40) == 8 ? (temp_ang / 40 + 1) : 0)] = (float)(temp_ang % 40) / 40 * temp_mag;/**/
+						/**(tempHist + temp_ang / 40) = (float)(40-(temp_ang % 40)) / 40.0 * temp_mag;
+						*(tempHist + ((temp_ang/40)==8? (temp_ang / 40+1):0)) = (float)(temp_ang % 40) / 40.0 * temp_mag;/**/
+					}
+					
+				}
+			}
+		}
+	}
+}
+void test9_1()
+{
+	Mat srcMat, plMat, bgMat;
+	srcMat = imread("D://image/timg11.jpg");
+	plMat = imread("D://image/timg12.jpg");
+	bgMat = imread("D://image/timg13.jpg");
+	cvtColor(srcMat, gryMat, COLOR_BGR2GRAY);//灰度图
+	int wid = 0;
+	int hei = 0;
+	wid = srcMat.cols;
+	hei = srcMat.rows;
+	int area = wid * hei;
+	//cout << "area: " << area << endl;
+	//深复制
+	Mat refMat;
+	srcMat.copyTo(refMat);
+	//图像划分为16*16的cell
+	int blockSize = 16;
+	nX = refMat.cols / blockSize;//横方向上有几个cell
+	nY = refMat.rows / blockSize;//竖方向上有几个cell
 
-	Mat dstMat;
-	float angle = -10.0;
-	float ab_angle = 10.0;
-	float scale = 1;
-	cv::Point2f center(src.cols * 0.5, src.rows * 0.5);
-    cv::Mat rot = cv::getRotationMatrix2D(center, angle, scale);
-	//获得外界四边形
-	cv::Rect bbox = cv::RotatedRect(center, dst.size(), angle).boundingRect();
-	//调整仿射矩阵参数
-	rot.at<double>(0, 2) += bbox.width / 2.0 - center.x;
-	rot.at<double>(1, 2) += bbox.height / 2.0 - center.y;
-	//仿射变换
-	cv::warpAffine(dst, dstMat, rot, bbox.size());
-	namedWindow("dst", WINDOW_AUTOSIZE);
-	imshow("dst", dst);
-	namedWindow("dstMat", WINDOW_AUTOSIZE);
-	imshow("dstMat", dstMat);
+	int nAangle = 9;//180°n等分 0 20 40 160 九等分
+	int bins = nX * nY * nAangle;//每个cell需要9bit的直方统计图
+	//cout << "bins: " << bins << endl;
+
+	/*float* ref_hist = new float[bins];
+	memset(ref_hist, 0, sizeof(float) * bins);
+	float* pl_hist = new float[bins];
+	memset(pl_hist, 0, sizeof(float) * bins);
+	float* bg_hist = new float[bins];
+	memset(bg_hist, 0, sizeof(float) * bins);/**/
+	/*
+	vector<float> hist_ref(bins);
+	vector<float> hist_pl(bins);
+	vector<float> hist_bg(bins);/**/
+	//ref_hist[0] = 9;
+	//cout << "\nmagnitude: " << ref_hist[0] << endl;
+	int reCode = 0;
+	//计算三张输入图片的HOG
+	calcHOG(refMat, ref_hist,nAangle, blockSize);//ref_hist直方图
+	calcHOG(plMat , pl_hist, nAangle, blockSize);
+	calcHOG(bgMat, bg_hist,nAangle, blockSize);
+
+	for (int i = 0; i < 10; i++) printf("%f ", ref_hist[i]);
+	printf("\r\n ");
+	for (int i = 0; i < 10; i++) printf("%f ", pl_hist[i]);
+	printf("\r\n ");
+	for (int i = 0; i < 10; i++) printf("%f ", bg_hist[i]);
+	printf("\r\n");/**/
+
+	//计算直方图距离，相似度
+	//float dis0 = normL2Sqr(ref_hist, ref_hist, bins);
+	float dis1 = normL2Sqr(ref_hist, pl_hist, bins);
+	float dis2 = normL2Sqr(pl_hist, bg_hist, bins);
+	//cout << dis0 << endl;
+	cout << "dis1: " << dis1 << endl;
+	cout << "dis2: " << dis2 << endl;
+
+	/*delete[] ref_hist;
+	delete[] pl_hist;
+	delete[] bg_hist;/**/
+
+	namedWindow("标记原图", WINDOW_AUTOSIZE);
+	imshow("标记原图", srcMat);
+	namedWindow("plMat", WINDOW_AUTOSIZE);
+	imshow("plMat", plMat);
+	namedWindow("bgMat", WINDOW_AUTOSIZE);
+	imshow("bgMat", bgMat);
+
 	waitKey(0);
 }
 
-void test7_2()
-{
-	Mat dstMat, srcMat, gryMat, binMat, cannyMat;
-	Point p_start, p_end;
-	int canny_d = 50;
-	srcMat = imread("D://image/timg7.jpg");
-	//cout << srcMat.size() << endl;
-	cvtColor(srcMat, gryMat, COLOR_BGR2GRAY);//BGR图形->灰度图
-	//canny边缘滤波 否则容易把内部误判为直线
-	Canny(srcMat, cannyMat, canny_d, 200, 3);//BGR图->边缘图
-	//threshold(cannyMat, binMat, 100, 255, THRESH_BINARY);//灰度图->二值化
-	//霍夫线变换
-	vector<	Vec2f > lines;
-	HoughLines(cannyMat, lines, 1, CV_PI / 180, 90);//传入二值化图像
-	cout << lines.size() << endl;
-	//定义结果图 复制
-	dstMat = Mat(srcMat.rows, srcMat.cols, CV_8UC3, Scalar(0, 0, 0));
-	//绘制出每条线段
-	for (size_t i = 0; i < lines.size(); i++)
-	{
-		float rho = lines[i][0], theta = lines[i][1];
-		Point pt1, pt2;
-		double a = cos(theta), b = sin(theta);
-		double x0 = (a * rho), y0 = b * rho;
-		pt1.x = (cv::saturate_cast<int>(x0 - 1000 * (-b)));//返回与参数最接近的整数
-		pt1.y = (cv::saturate_cast<int>(y0 - 1000 * (a)));
-		pt2.x = (cv::saturate_cast<int>(x0 + 1000 * (-b)));
-		pt2.y = (cv::saturate_cast<int>(y0 + 1000 * (a)));
-		cv::line(srcMat, pt1, pt2, Scalar(0, 0, 255), 2, CV_AA);
-		//line(src, pt1, pt2, Scalar(255, 255, 255), 1, LINE_AA);
-		//if (i == 0) { p_start.x = pt1.x; p_start.y = pt1.y; }
-		//else if(i== lines.size()) { p_end.x = pt2.x; p_end.y = pt2.y; }
-	}
-	
-	//line(srcMat, Point(p_result[0].x, p_result[0].y), Point(p_result[1].x, p_result[1].y), Scalar(0, 0, 255), 2, CV_AA);
-
-	namedWindow("原始图", WINDOW_AUTOSIZE);
-	imshow("原始图", srcMat);
-	namedWindow("cannyMat", WINDOW_AUTOSIZE);
-	imshow("cannyMat", cannyMat);
-
-	waitKey(0);
-}
-void test7_3()
-{
-	Mat dstMat, srcMat,gryMat,binMat,cannyMat;
-	Point p_start,p_end;
-	int canny_d = 50;
-	srcMat = imread("D://image/timg7.jpg");
-	//cout << srcMat.size() << endl;
-	cvtColor(srcMat, gryMat, COLOR_BGR2GRAY);//BGR图形->灰度图
-	//canny边缘滤波 否则容易把内部误判为直线
-	Canny(srcMat, cannyMat, canny_d, 200, 3);//BGR图->边缘图
-	//threshold(cannyMat, binMat, 100, 255, THRESH_BINARY);//灰度图->二值化
-	//霍夫线变换
-	vector<	Vec4i > lines;
-	HoughLinesP(cannyMat, lines, 1, CV_PI / 180, 50,50,10);//传入二值化图像
-	//定义结果图 复制
-	dstMat = Mat(srcMat.rows, srcMat.cols, CV_8UC3, Scalar(0, 0, 0));
-	//绘制出每条线段
-	for (size_t i = 0; i < lines.size(); i++)
-	{
-		Vec4i pt = lines[i];
-		line(srcMat, Point(pt[0], pt[1]), Point(pt[2], pt[3]), Scalar(0, 0, 255), 2, CV_AA);
-		//if (rect.width > 1000) {
-	}
-	//line(srcMat, Point(p_result[0].x, p_result[0].y), Point(p_result[1].x, p_result[1].y), Scalar(0, 0, 255), 2, CV_AA);
-	//line(srcMat, Point(p_result[2].x, p_result[2].y), Point(p_result[3].x, p_result[3].y), Scalar(0, 0, 255), 2, CV_AA);
-	/*for (size_t i = 0; i < lines.size(); i++)
-	{
-		float rho = lines[i][0], theta = lines[i][1];
-		Point pt1, pt2;
-		double a = cos(theta), b = sin(theta);
-		double x0 = a * rho, y0 = b * rho;
-		pt1.x = cvRound(x0 + 1000 * (-b));//返回与参数最接近的整数
-		pt1.y = cvRound(y0 + 1000 * (a));
-		pt2.x = cvRound(x0 + 1000 * (-b));
-		pt2.y = cvRound(y0 + 1000 * (a));
-		line(dstMat, pt1, pt2, Scalar(55, 100, 196), 1, LINE_AA);
-		//line(src, pt1, pt2, Scalar(255, 255, 255), 1, LINE_AA);
-		//if (i == 0) { p_start.x = pt1.x; p_start.y = pt1.y; }
-		//else if(i== lines.size()) { p_end.x = pt2.x; p_end.y = pt2.y; }
-	}/**/
-	
-	namedWindow("原始图", WINDOW_AUTOSIZE);
-	imshow("原始图", srcMat);
-	namedWindow("灰度图", WINDOW_AUTOSIZE);
-	imshow("灰度图", gryMat);
-	
-	waitKey(0);
-}
 int main()
 {
-	test7_2();
+	test9_1();
 	return 0;
 }
