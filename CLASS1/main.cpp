@@ -23,7 +23,7 @@ void test13_1()
 	double minVal, maxVal;
 	Point matchLoc;
 	Point minLoc, maxLoc;
-	while(1){
+	while (1) {
 		cap >> frame;
 		cvtColor(frame, frame, COLOR_BGR2GRAY);
 		if (cnt == 0) {
@@ -39,26 +39,26 @@ void test13_1()
 		}
 		else {
 			//第二帧开始
-			
+
 			matchTemplate(frame, refMat, resultMat, match_method);//寻找匹配区域
 			//imshow("resultMat", resultMat);
 			normalize(resultMat, resultMat, 0, 1, NORM_MINMAX);//归一化
 			//imshow("resultMat2", resultMat);
 			minMaxLoc(resultMat, &minVal, &maxVal, &minLoc, &maxLoc, Mat());
-			rectangle(frame, minLoc, Point2i(minLoc.x + tempMat.cols, minLoc.y + tempMat.rows),Scalar(0,0,0),2,8,0);
+			rectangle(frame, minLoc, Point2i(minLoc.x + tempMat.cols, minLoc.y + tempMat.rows), Scalar(0, 0, 0), 2, 8, 0);
 			namedWindow("frame", WINDOW_AUTOSIZE);
 			imshow("frame", frame);
 			//imshow("subMat", subMat);
-			waitKey(30);	
+			waitKey(30);
 		}
 	}
 }
 cv::Mat binMat, gryMat, minRectMat, canny_img, dstMat;
 int nX, nY;
-int bins = 810;
-float ref_hist[810];
-float pl_hist[810];
-float bg_hist[810];/**/
+int bins = 585;
+float ref_hist[585];
+float pl_hist[585];
+float bg_hist[585];/**/
 void calcHOG(cv::Mat src, float* tempHist, int nAngle, int cellSize)
 {
 	int i, j;
@@ -121,81 +121,88 @@ void calcHOG(cv::Mat src, float* tempHist, int nAngle, int cellSize)
 }
 void test13_2()
 {
-	int cnt = 0;
-	int match_method = 0;
-	double minVal, maxVal;
-	Point matchLoc;
-	Point minLoc, maxLoc;
-
-	frame = imread("D://image/timg7.jpg");
-	cvtColor(frame, frame, COLOR_BGR2GRAY);
-
 	Mat srcMat, plMat, bgMat;
 	srcMat = imread("D://image/timg7.jpg");
-	cvtColor(srcMat, gryMat, COLOR_BGR2GRAY);//灰度图
-	int wid = 0;
-	int hei = 0;
-	wid = srcMat.cols;
-	hei = srcMat.rows;
+	refMat = imread("D://image/timg17.jpg");
+	cvtColor(refMat, refMat, COLOR_BGR2GRAY);
+	cvtColor(srcMat, srcMat, COLOR_BGR2GRAY);//灰度图
+	//检测图像的信息，大图
+	int WID = 0;//646
+	int HEI = 0;//482
+	WID = srcMat.cols;
+	HEI = srcMat.rows;
+	int AREA = WID * HEI;
+	cout << "WID: " << WID << endl;
+	cout << "HEI: " << HEI << endl;
+	cout << "AREA: " << AREA << endl;
+	//目标图像的信息，小图（参考图像）
+	int wid = 0;//211
+	int hei = 0;//93
+	wid = refMat.cols;
+	hei = refMat.rows;
 	int area = wid * hei;
+	cout << "wid: " << wid << endl;
+	cout << "hei: " << hei << endl;
+	cout << "area: " << area << endl;
 
-	Rect2d r;
-	r = selectROI(frame, true);
-	tempMat = frame(r);
-	tempMat.copyTo(refMat);
-	//srcMat.copyTo(refMat);
 	//图像划分为16*16的cell
 	int blockSize = 16;
 	nX = refMat.cols / blockSize;//横方向上有几个cell
 	nY = refMat.rows / blockSize;//竖方向上有几个cell
 	int nAangle = 9;//180°n等分 0 20 40 160 九等分
-	int bins = nX * nY * nAangle;//每个cell需要9bit的直方统计图
-	cout << "bins: " << bins << endl;
-	while (1) {	
-		
-		//计算三张输入图片的HOG
-		calcHOG(refMat, ref_hist, nAangle, blockSize);//ref_hist直方图
-		for (int i = 0; i < 10; i++) printf("%f ", ref_hist[i]);
-		printf("\r\n ");
-		//计算直方图距离，相似度
-		//float dis0 = normL2Sqr(ref_hist, ref_hist, bins);
-		float dis1 = normL2Sqr(ref_hist, pl_hist, bins);
-		cout << "dis1: " << dis1 << endl;
-		namedWindow("标记原图", WINDOW_AUTOSIZE);
-		imshow("标记原图", srcMat);
-		waitKey(0);
-
-		if (cnt == 0) {
-			Rect2d r;
-			r = selectROI(frame, true);
-			tempMat = frame(r);
-			tempMat.copyTo(refMat);
-			//namedWindow("tempMat", WINDOW_AUTOSIZE);
-			//imshow("tempMat", tempMat);
-			//waitKey(0);
-			destroyAllWindows();
-			cnt = 1;
+	//int bins = nX * nY * nAangle;//每个cell需要9bit的直方统计图
+	//cout << "bins: " << bins << endl;
+	//计算三张输入图片的HOG
+	calcHOG(refMat, ref_hist, nAangle, blockSize);//ref_hist直方图
+	for (int i = 0; i < 10; i++) printf("%f ", ref_hist[i]);
+	//int dist = normL2Sqr(ref_hist, ref_hist, bins);
+	//cout << "dist:" << dist << endl;
+	//printf("\r\n ");
+	int mov_dx = wid / 4;//52
+	int mov_dy = hei / 4;//23
+	int MOV_X = WID - wid - 1;//434
+	int MOV_Y = HEI - hei - 1;//388
+	int MOV_Xcnt = WID / mov_dx;//12
+	int MOV_Ycnt = HEI / mov_dy;//20
+	cout << "mov_dx:" << mov_dx << " mov_dy:" << mov_dy << " MOV_X:" << MOV_X << " MOV_Y:" << MOV_Y << " MOV_Xcnt:" << MOV_Xcnt << " MOV_Ycnt:" << MOV_Ycnt << endl;
+	float src_hist[240][585];
+	float dis[240];
+	float dis_max = 0;
+	float dis_min = 2000000;
+	Mat tempMat;
+	Rect2i rr;
+	int i = 0, j = 0, cnt = 0;
+	for (i = 0; i < MOV_Ycnt; i++)
+	{
+		for (j = 0; j < MOV_Xcnt; j++)
+		{
+			Rect2i r(j * mov_dy, i * mov_dx, wid, hei);
+			tempMat = srcMat(r);
+			calcHOG(tempMat, src_hist[i * 12 + j], nAangle, blockSize);
+			dis[i * 12 + j] = normL2Sqr(ref_hist, src_hist[i * 12 + j], bins) / 1000;
+			//if (dis[i * 12 + j] > dis_max)
+			//	dis_max = dis[i * 12 + j];
+			if (dis[i * 12 + j] < dis_min) {
+				dis_min = dis[i * 12 + j];
+				rr = r;
+				cnt = 1;
+				cout << "cnt:" << i * 12 + j << "  " << dis[i * 12 + j] << endl;
+				cout << "dis_min:" << dis_min << endl;
+				break;
+			}
+			cout << "dis" << i * 12 + j << " = " << dis[i * 12 + j] << endl;
+			cout << "dis_min:" << dis_min << endl;
 		}
-		else {
-			//第二帧开始
-
-			matchTemplate(frame, refMat, resultMat, match_method);//寻找匹配区域
-			//imshow("resultMat", resultMat);
-			normalize(resultMat, resultMat, 0, 1, NORM_MINMAX);//归一化
-			//imshow("resultMat2", resultMat);
-			minMaxLoc(resultMat, &minVal, &maxVal, &minLoc, &maxLoc, Mat());
-			rectangle(frame, minLoc, Point2i(minLoc.x + tempMat.cols, minLoc.y + tempMat.rows), Scalar(0, 0, 0), 2, 8, 0);
-			namedWindow("frame", WINDOW_AUTOSIZE);
-			imshow("frame", frame);
-			//imshow("subMat", subMat);
-			waitKey(30);
-		}
+		if (cnt == 1)break;
 	}
-	
+	rectangle(srcMat, rr, Scalar(255, 0, 0), 2, LINE_8, 0);
+	namedWindow("srcMat", WINDOW_AUTOSIZE);
+	imshow("srcMat", srcMat);
+	waitKey(0);
 }
 
 int main()
 {
-	test13_1();
+	test13_2();
 	return 0;
 }
