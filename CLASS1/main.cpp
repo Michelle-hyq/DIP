@@ -2,6 +2,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <iostream>
+#include <math.h>
 using namespace cv;
 using namespace std;
 // 课堂十二
@@ -41,199 +42,141 @@ void test12_1()
 }
 //--------------------------------------------------------------------------------------------//
 //高斯建模及背景差分
+constexpr auto N = 50;
+cv::Mat datMat[N];
+int a = 10;//方差前面的系数
+Mat aveTemp(480, 640, CV_16UC3, Scalar(0, 0, 0));//视频图像的行数和列数
+//注意这里定义16位的三通道Mat 用于计算50帧的像素平均值，不然数据会溢出
+Mat aveMat(480, 640, CV_8UC3, Scalar(0, 0, 0));
+Mat showMat(480, 640, CV_8UC3, Scalar(0, 0, 0));
+double sigma = 0;
+void aChange(int, void*)
+{
+	for (int i = 0; i < 480; i++) { //一个像素点为单位进行处理
+		for (int j = 0; j < 640; j++)
+		{
+			int data0 = abs(frame.at<Vec3b>(i, j)[0] - aveMat.at<Vec3b>(i, j)[0]);
+			int data1 = abs(frame.at<Vec3b>(i, j)[1] - aveMat.at<Vec3b>(i, j)[1]);
+			int data2 = abs(frame.at<Vec3b>(i, j)[2] - aveMat.at<Vec3b>(i, j)[2]);
+			int data = (data0 + data1 + data2) / 3;
+			//if (abs(sigma0 - data0) > a * sigma0|| abs(sigma1 - data1) > a * sigma1|| abs(sigma1 - data1) > a * sigma1) //超过一定范围 则认为是运动的物体
+			if (abs(sigma - data) > a * sigma)
+			{
+				showMat.at<Vec3b>(i, j)[0] = 255;
+				showMat.at<Vec3b>(i, j)[1] = 255;
+				showMat.at<Vec3b>(i, j)[2] = 255;
+			}
+			else {
+				showMat.at<Vec3b>(i, j)[0] = 0;
+				showMat.at<Vec3b>(i, j)[1] = 0;
+				showMat.at<Vec3b>(i, j)[2] = 0;
+			}
+		}
+	}
+	namedWindow("目标物体", WINDOW_AUTOSIZE);
+	imshow("目标物体", showMat);
+}
+
 void test12_2()
 {
+	int i, j;
+	int wid = 0;
+	int hei = 0;
+	int area = 0;
+	double sigma0 = 0;
+	double sigma1 = 0;
+	double sigma2 = 0;
+	int a=10;//方差前面的系数
+	Mat aveTemp(480, 640, CV_16UC3, Scalar(0, 0, 0));//视频图像的行数和列数
+   //注意这里定义16位的三通道Mat 用于计算50帧的像素平均值，不然数据会溢出
+	Mat aveMat(480, 640, CV_8UC3, Scalar(0, 0, 0));
+	Mat showMat(480, 640, CV_8UC3, Scalar(0, 0, 0));
 	cap.open(0);
 	while (!cap.isOpened()); {
 		cap.open(0);
 		std::cout << "不能打开视频文件" << std::endl;
 	}
 	int cnt = 0;
-
+	int frame_cnt = 0;
 	while (1) {
 		cap >> frame;
-		cvtColor(frame, frame, COLOR_BGR2GRAY);
-		if (cnt == 0) {
-			frame.copyTo(bgMat);
+		createTrackbar("阈值系数", "目标物体", &a, 20, aChange);
+		//cvtColor(frame, frame, COLOR_BGR2GRAY);
+		if (frame_cnt == 0) {
+			wid = frame.cols;//640
+			hei = frame.rows;//480
+			area = wid * hei;
+			frame.copyTo(datMat[frame_cnt]);//第一幅图也保存下来存在datMat[0]里；
+			frame_cnt++;
 		}
-		else {
-			//第二帧开始背景差分
-			//相减
-			absdiff(frame, bgMat, subMat);
-			//absdiff(bgMat, frame, subMat);
-			//差分结果二值化
-			threshold(subMat, bny_subMat, 45, 255, CV_THRESH_BINARY);
-			imshow("b_subMat", bny_subMat);
-			imshow("subMat", subMat);
-			waitKey(30);
+		else if(frame_cnt<N){//保存50张图像
+			frame.copyTo(datMat[frame_cnt]);
+			frame_cnt++;
 		}
-		cnt = 1;
+		else if(frame_cnt==N){//拍到50张，保存了50张图像
+			for (i = 0; i < hei; i++) { //480
+				for (j = 0; j < wid; j++)//640
+				{
+					//ushort a1 = aveTemp.at<Vec3w>(480, 0)[0];//(480,0)可以--（640,480）坐标
+					//ushort a2 = datMat[0].at<Vec3b>(0, 480)[0];//(0,480)可以--（480,640）行列
+					for (cnt = 0; cnt < N; cnt++) {//50帧相加 求均值u				
+						aveTemp.at<Vec3w>(i, j)[0] += datMat[cnt].at<Vec3b>(i, j)[0];//i行j列第k个通道 
+						aveTemp.at<Vec3w>(i, j)[1] += datMat[cnt].at<Vec3b>(i, j)[1];//(640,480)
+						aveTemp.at<Vec3w>(i, j)[2] += datMat[cnt].at<Vec3b>(i, j)[2];
+						//add(aveMat, datMat[cnt], aveMat);
+					}
+					aveMat.at<Vec3b>(i, j) = aveTemp.at<Vec3w>(i, j) /N;//求每一个像素点的50个均值--高斯分布
+					//求方差sigma
+					for (cnt = 0; cnt < N; cnt++) {//∑（X-u)^2
+						sigma0 += pow(abs(datMat[cnt].at<Vec3b>(i, j)[0] - aveMat.at<Vec3b>(i, j)[0]), 2);
+						sigma1 += pow(abs(datMat[cnt].at<Vec3b>(i, j)[1] - aveMat.at<Vec3b>(i, j)[1]), 2);
+						sigma2 += pow(abs(datMat[cnt].at<Vec3b>(i, j)[2] - aveMat.at<Vec3b>(i, j)[2]), 2);
+						//add(aveMat, datMat[cnt], aveMat);
+					}//sigma^2=∑（X-u)^2/N;
+					sigma0 = pow(sigma0 / N, 0.5);
+					sigma1 = pow(sigma1 / N, 0.5);
+					sigma2 = pow(sigma2 / N, 0.5);
+					sigma= (sigma0 + sigma1 + sigma2) / 3;//求每一个像素点的50个方差--高斯分布
+					//cout << "i:" << i<< endl;
+					//cout << "j:" << j << endl;
+				}
+			}
+			frame_cnt++;
+		}
+		else {//已经计算出了每一个像素点的均值以及整体方差，接下来将正常处理视频流，看方差--离原来的图像像素有多远
+			for (i = 0; i < hei; i++) { //一个像素点为单位进行处理
+				for (j = 0; j < wid; j++)
+				{
+					int data0 = abs(frame.at<Vec3b>(i, j)[0] - aveMat.at<Vec3b>(i, j)[0]);
+					int data1 = abs(frame.at<Vec3b>(i, j)[1] - aveMat.at<Vec3b>(i, j)[1]);
+					int data2 = abs(frame.at<Vec3b>(i, j)[2] - aveMat.at<Vec3b>(i, j)[2]);
+					int data = (data0 + data1 + data2) / 3;
+					//if (abs(sigma0 - data0) > a * sigma0|| abs(sigma1 - data1) > a * sigma1|| abs(sigma1 - data1) > a * sigma1) //超过一定范围 则认为是运动的物体
+					if(abs(sigma - data) > a * sigma)
+					{
+						showMat.at<Vec3b>(i, j)[0] = 255;
+						showMat.at<Vec3b>(i, j)[1] = 255;
+						showMat.at<Vec3b>(i, j)[2] = 255;
+					}
+					else {
+						showMat.at<Vec3b>(i, j)[0] = 0;
+						showMat.at<Vec3b>(i, j)[1] = 0;
+						showMat.at<Vec3b>(i, j)[2] = 0;
+					}
+				}
+			}
+			namedWindow("目标物体", WINDOW_AUTOSIZE);
+			imshow("目标物体", showMat);
+		}		
+		namedWindow("frame", WINDOW_AUTOSIZE);
+		imshow("frame", frame);
+		waitKey(30);
 	}
 }
 
-int median_size = 5;
-void med_fil_sizeChange(int, void*);
-void med_proc() {
-	bool rSucess = cap.read(frame);
-	if (!rSucess) {
-		std::cout << "不能从视频文件读取帧" << std::endl;
-	}
-	namedWindow("中值原图", WINDOW_NORMAL);
-	imshow("中值原图", frame);
-	medianBlur(frame, frame_out, median_size * 2 + 1);//一直出错，不能为偶数
-	namedWindow("中值滤波", WINDOW_NORMAL);
-	imshow("中值滤波", frame_out);
-	waitKey(30);
-}
-void med_fil_sizeChange(int, void*)
-{
-	med_proc();
-}
-void test5_1()
-{
-	cap.open(0);
-	while (!cap.isOpened()); {
-		cap.open(0);
-		std::cout << "不能打开视频文件" << std::endl;
-	}
 
-	med_proc();
-	createTrackbar("中值尺寸", "中值滤波", &median_size, 10, med_fil_sizeChange);
-	while (1)
-	{
-		med_proc();
-		createTrackbar("中值尺寸", "中值滤波", &median_size, 10, med_fil_sizeChange);
-		//cvSetTrackbarPos("滤波尺寸", "中值滤波", median_size);	
-	}
-	/*
-	createTrackbar(
-		"threshold",//轨迹条的名字
-		window_name,//轨迹条依附的窗口名字
-		&lowTH,		//指向整型的指针，表示滑块的位置，在创建时，滑块的初始位置就是该变量的初始值
-		maxTH,		//滑块可以到达的最大位置的值
-		threshold_Mat,//指向回调函数的指针
-		&gryMat		//用户传给回调函数的数据
-	);/**/
-}
-//--------------------------------------------------------------------------------------------//
-//练习2 均值滤波 读取摄像头图像，并对摄像头图像进行均值滤波
-int avr_size = 3;
-void avr_fil_sizeChange(int, void*);
-void avr_proc() {
-	bool rSucess = cap.read(frame);
-	if (!rSucess) {
-		std::cout << "不能从视频文件读取帧" << std::endl;
-	}
-	namedWindow("均值原图", WINDOW_NORMAL);
-	imshow("均值原图", frame);
-	if (avr_size == 0) avr_size = 1;//尺寸不能为0
-	blur(frame, frame_out, Size(avr_size, avr_size));
-	namedWindow("均值滤波", WINDOW_NORMAL);
-	imshow("均值滤波", frame_out);
-	waitKey(30);
-}
-void avr_fil_sizeChange(int, void*)
-{
-	avr_proc();
-}
-void test5_2()
-{
-	cap.open(0);
-	while (!cap.isOpened()); {
-		cap.open(0);
-		std::cout << "不能打开视频文件" << std::endl;
-	}
-	avr_proc();
-	createTrackbar("均值尺寸", "均值滤波", &avr_size, 10, avr_fil_sizeChange);
-	while (1)
-	{
-		avr_proc();
-		createTrackbar("均值尺寸", "均值滤波", &avr_size, 10, avr_fil_sizeChange);
-	}
-}
-//--------------------------------------------------------------------------------------------//
-//练习3 均值滤波-高斯滤波 读取摄像头图像，并对摄像头图像进行高斯滤波
-int Gauss_size = 5;
-void Gauss_fil_sizeChange(int, void*);
-void Gauss_proc() {
-	bool rSucess = cap.read(frame);
-	if (!rSucess) {
-		std::cout << "不能从视频文件读取帧" << std::endl;
-	}
-	namedWindow("高斯原图", WINDOW_NORMAL);
-	imshow("高斯原图", frame);
-	if (Gauss_size == 0) Gauss_size = 1;//尺寸不能为0
-	blur(frame, frame_out, Size(Gauss_size, Gauss_size));
-	namedWindow("高斯滤波", WINDOW_NORMAL);
-	imshow("高斯滤波", frame_out);
-	waitKey(30);
-}
-void Gauss_fil_sizeChange(int, void*)
-{
-	Gauss_proc();
-}
-void test5_3()
-{
-	cap.open(0);
-	while (!cap.isOpened()); {
-		cap.open(0);
-		std::cout << "不能打开视频文件" << std::endl;
-	}
-	Gauss_proc();
-	createTrackbar("高斯尺寸", "高斯滤波", &Gauss_size, 10, Gauss_fil_sizeChange);
-	while (1)
-	{
-		Gauss_proc();
-		createTrackbar("高斯尺寸", "高斯滤波", &Gauss_size, 10, Gauss_fil_sizeChange);
-	}
-}
-//--------------------------------------------------------------------------------------------//
-//练习4 边缘提取 读取摄像头图像，并对摄像头图像进行边缘提取分别提取x，y方向上的边缘，观察结果有何区别。
-int Sobel_size = 3;
-cv::Mat frame_outx, frame_outy;
-cv::Mat abs_grad_outx, abs_grad_outy;
-void Sobel_fil_sizeChange(int, void*);
-void Sobel_proc() {
-	bool rSucess = cap.read(frame);
-	if (!rSucess) {
-		std::cout << "不能从视频文件读取帧" << std::endl;
-	}
-	namedWindow("边缘原图", WINDOW_NORMAL);
-	imshow("边缘原图", frame);
-	cvtColor(frame, frame, CV_BGR2GRAY);
-	//threshold(frame, frame, 100, 255, THRESH_BINARY);
-	Sobel(frame, frame_outx, CV_16S, 1, 0, Sobel_size * 2 + 1);//输出图像的深度、x差分阶数、y差分阶数，sobel核大小：奇数
-	//convertScaleAbs(frame_outx, abs_grad_outx);
-	namedWindow("x边缘提取", WINDOW_NORMAL);
-	imshow("x边缘提取", frame_outx);
-	Sobel(frame, frame_outy, CV_16S, 0, 1, Sobel_size * 2 + 1);//输出图像的深度、x差分阶数、y差分阶数，sobel核大小：奇数
-	//convertScaleAbs(frame_outy, abs_grad_outy);
-	namedWindow("y边缘提取", WINDOW_NORMAL);
-	imshow("y边缘提取", frame_outy);
-
-	waitKey(30);
-}
-void Sobel_fil_sizeChange(int, void*)
-{
-	Sobel_proc();
-}
-void test5_4()
-{
-	cap.open(0);
-	while (!cap.isOpened()); {
-		cap.open(0);
-		std::cout << "不能打开视频文件" << std::endl;
-	}
-	Sobel_proc();
-	createTrackbar("边缘内核", "边缘原图", &Sobel_size, 10, Sobel_fil_sizeChange);
-	while (1)
-	{
-		Sobel_proc();
-		createTrackbar("边缘内核", "边缘原图", &Sobel_size, 10, Sobel_fil_sizeChange);
-	}
-}
 int main()
 {
-	test12_1();
+	test12_2();
 	return 0;
 }
