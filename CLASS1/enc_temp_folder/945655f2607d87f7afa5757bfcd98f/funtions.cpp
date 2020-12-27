@@ -473,11 +473,10 @@ int ifftDemo()
 	/*--------------------------------------------------*/
 
 	mag = mag / 255;
+	cv::Mat mask;
 	Mat proceMag;
 
-	Mat mask1(mag.cols,mag.rows,CV_8UC3,)
-
-	//selectPolygon(mag, mask);
+	selectPolygon(mag, mask);
 	imshow("mask", mask);
 
 	mag = mag.mul(mask);
