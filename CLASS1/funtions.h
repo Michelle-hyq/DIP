@@ -7,6 +7,8 @@ using namespace std;
 int removeFrequnce();
 int dftDemo();
 int ifftDemo();
+int ifftDemo2();
+void ADD2();
 int mouseROI();
 
 

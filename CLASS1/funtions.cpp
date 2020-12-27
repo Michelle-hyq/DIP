@@ -398,14 +398,277 @@ int mouseROI()
 
 	return 0;
 }
-
-
-
+cv::Mat dspMat;
+cv::Mat dspMat2;
+cv::Mat dspMat3;
 int ifftDemo()
 {
 	cv::Mat dst;
 
-	cv::Mat src = imread("D://image/timg6.jpg", 0);
+	cv::Mat src = imread("D://image/timg18.jpg", 0);
+
+	int m = getOptimalDFTSize(src.rows); //2,3,5的倍数有更高效率的傅里叶变换
+	int n = getOptimalDFTSize(src.cols);
+	Mat padded;
+	//把灰度图像放在左上角,在右边和下边扩展图像,扩展部分填充为0; 
+	copyMakeBorder(src, padded, 0, m - src.rows, 0, n - src.cols, BORDER_CONSTANT, Scalar::all(0));
+	//扩充src的边缘，将图像变大，扩展边缘的信息
+	//planes[0]为dft变换的实部，planes[1]为虚部，ph为相位， plane_true=mag为幅值
+	Mat planes[] = { Mat_<float>(padded), Mat::zeros(padded.size(), CV_32F) };
+	Mat planes_true = Mat_<float>(padded);//实部
+	Mat ph = Mat_<float>(padded);//虚部
+	Mat complexImg;
+	//多通道complexImg既有实部又有虚部
+	merge(planes, 2, complexImg);//矩阵数组，需要合并矩阵的个数，输出
+	//对上边合成的mat进行傅里叶变换,***支持原地操作***,傅里叶变换结果为复数.通道1存的是实部,通道二存的是虚部
+	dft(complexImg, complexImg);
+	//把变换后的结果分割到两个mat,一个实部,一个虚部,方便后续操作
+	split(complexImg, planes);
+
+	//---------------此部分目的为更好地显示幅值---后续恢复原图时反着再处理一遍-------------------------
+	magnitude(planes[0], planes[1], planes_true);//幅度谱mag
+	phase(planes[0], planes[1], ph);//相位谱ph
+	Mat A = planes[0];
+	Mat B = planes[1];
+	Mat mag = planes_true;
+
+	mag += Scalar::all(1);//对幅值加1
+	//计算出的幅值一般很大，达到10^4,通常没有办法在图像中显示出来，需要对其进行log求解。
+	log(mag, mag);
+
+	//取矩阵中的最大值，便于后续还原时去归一化
+	double maxVal;
+	minMaxLoc(mag, 0, &maxVal, 0, 0);
+
+	//修剪频谱,如果图像的行或者列是奇数的话,那其频谱是不对称的,因此要修剪
+	mag = mag(Rect(0, 0, mag.cols & -2, mag.rows & -2));
+	ph = ph(Rect(0, 0, mag.cols & -2, mag.rows & -2));
+	Mat _magI = mag.clone();
+	//将幅度归一化到可显示范围。
+	normalize(_magI, _magI, 0, 1, CV_MINMAX);
+	//imshow("before rearrange", _magI);
+
+	//显示规则频谱图
+	int cx = mag.cols / 2;
+	int cy = mag.rows / 2;
+
+	//这里是以中心为标准，把mag图像分成四部分
+	Mat tmp;
+	Mat q0(mag, Rect(0, 0, cx, cy));
+	Mat q1(mag, Rect(cx, 0, cx, cy));
+	Mat q2(mag, Rect(0, cy, cx, cy));
+	Mat q3(mag, Rect(cx, cy, cx, cy));
+	q0.copyTo(tmp);
+	q3.copyTo(q0);
+	tmp.copyTo(q3);
+	q1.copyTo(tmp);
+	q2.copyTo(q1);
+	tmp.copyTo(q2);
+
+	normalize(mag, mag, 0, 1, CV_MINMAX);
+	//imshow("原图灰度图", src);
+	//imshow("频谱幅度", mag);
+	mag = mag * 255;
+	imwrite("原频谱.jpg", mag);
+
+	mag = mag / 255;
+	Mat proceMag;
+	//掩膜方式1：直接在原图上定义ROI区域，对原图ROI进行操作，mask和ROI共名称
+	Mat mask(mag, Rect(cx - cx / 8, cy - cy / 8, cx / 4, cy / 4));
+	//Mat mask(mag, Rect(cx - cx / 16, cy - cy / 16, cx / 8, cy / 8));
+	//imshow("mask", mask);
+	mask.setTo(0);//直接黑 去掉中间部分
+	imshow("mag", mag);
+	///////////////////////////////////////////////////////////////////////////////////////////
+	proceMag = mag * 255;
+	imwrite("处理后频谱.jpg", proceMag);
+	//前述步骤反着来一遍，目的是为了逆变换回原图
+	Mat q00(mag, Rect(0, 0, cx, cy));
+	Mat q10(mag, Rect(cx, 0, cx, cy));
+	Mat q20(mag, Rect(0, cy, cx, cy));
+	Mat q30(mag, Rect(cx, cy, cx, cy));
+
+	//交换象限
+	q00.copyTo(tmp);
+	q30.copyTo(q00);
+	tmp.copyTo(q30);
+	q10.copyTo(tmp);
+	q20.copyTo(q10);
+	tmp.copyTo(q20);
+
+	mag = mag * maxVal; //将归一化的矩阵还原 
+	exp(mag, mag);//对应于前述去对数
+	mag = mag - Scalar::all(1);//对应前述+1
+	polarToCart(mag, ph, planes[0], planes[1]);//由幅度谱mag和相位谱ph恢复实部planes[0]和虚部planes[1]
+	merge(planes, 2, complexImg);//将实部虚部合并
+
+
+	//-----------------------傅里叶的逆变换-----------------------------------
+	Mat ifft(Size(src.cols, src.rows), CV_8UC1);
+	//傅里叶逆变换
+	idft(complexImg, ifft, DFT_REAL_OUTPUT);
+	normalize(ifft, ifft, 0, 1, CV_MINMAX);
+
+	Rect rect(0, 0, src.cols, src.rows);
+	dst = ifft(rect);
+	dst = dst * 255;
+
+	dst.convertTo(dspMat, CV_8UC1);
+	imshow("dst", dspMat);
+	imshow("src", src);
+	return 0;
+
+}
+int ifftDemo2()
+{
+	cv::Mat dst;
+
+	cv::Mat src = imread("D://image/timg20.jpg", 0);
+
+	int m = getOptimalDFTSize(src.rows); //2,3,5的倍数有更高效率的傅里叶变换
+	int n = getOptimalDFTSize(src.cols);
+	Mat padded;
+	//把灰度图像放在左上角,在右边和下边扩展图像,扩展部分填充为0; 
+	copyMakeBorder(src, padded, 0, m - src.rows, 0, n - src.cols, BORDER_CONSTANT, Scalar::all(0));
+	//扩充src的边缘，将图像变大，扩展边缘的信息
+	//planes[0]为dft变换的实部，planes[1]为虚部，ph为相位， plane_true=mag为幅值
+	Mat planes[] = { Mat_<float>(padded), Mat::zeros(padded.size(), CV_32F) };
+	Mat planes_true = Mat_<float>(padded);//实部
+	Mat ph = Mat_<float>(padded);//虚部
+	Mat complexImg;
+	//多通道complexImg既有实部又有虚部
+	merge(planes, 2, complexImg);//矩阵数组，需要合并矩阵的个数，输出
+	//对上边合成的mat进行傅里叶变换,***支持原地操作***,傅里叶变换结果为复数.通道1存的是实部,通道二存的是虚部
+	dft(complexImg, complexImg);
+	//把变换后的结果分割到两个mat,一个实部,一个虚部,方便后续操作
+	split(complexImg, planes);
+
+	//---------------此部分目的为更好地显示幅值---后续恢复原图时反着再处理一遍-------------------------
+	magnitude(planes[0], planes[1], planes_true);//幅度谱mag
+	phase(planes[0], planes[1], ph);//相位谱ph
+	Mat A = planes[0];
+	Mat B = planes[1];
+	Mat mag = planes_true;
+
+	mag += Scalar::all(1);//对幅值加1
+	//计算出的幅值一般很大，达到10^4,通常没有办法在图像中显示出来，需要对其进行log求解。
+	log(mag, mag);
+
+	//取矩阵中的最大值，便于后续还原时去归一化
+	double maxVal;
+	minMaxLoc(mag, 0, &maxVal, 0, 0);
+
+	//修剪频谱,如果图像的行或者列是奇数的话,那其频谱是不对称的,因此要修剪
+	mag = mag(Rect(0, 0, mag.cols & -2, mag.rows & -2));
+	ph = ph(Rect(0, 0, mag.cols & -2, mag.rows & -2));
+	Mat _magI = mag.clone();
+	//将幅度归一化到可显示范围。
+	normalize(_magI, _magI, 0, 1, CV_MINMAX);
+	//imshow("before rearrange", _magI);
+
+	//显示规则频谱图
+	int cx = mag.cols / 2;
+	int cy = mag.rows / 2;
+
+	//这里是以中心为标准，把mag图像分成四部分
+	Mat tmp;
+	Mat q0(mag, Rect(0, 0, cx, cy));
+	Mat q1(mag, Rect(cx, 0, cx, cy));
+	Mat q2(mag, Rect(0, cy, cx, cy));
+	Mat q3(mag, Rect(cx, cy, cx, cy));
+	q0.copyTo(tmp);
+	q3.copyTo(q0);
+	tmp.copyTo(q3);
+	q1.copyTo(tmp);
+	q2.copyTo(q1);
+	tmp.copyTo(q2);
+
+	normalize(mag, mag, 0, 1, CV_MINMAX);
+	//imshow("原图灰度图", src);
+	//imshow("频谱幅度", mag);
+	mag = mag * 255;
+	imwrite("原频谱2.jpg", mag);
+
+
+	mag = mag / 255;
+	Mat mag2;
+	Mat proceMag, proceMag2;
+
+	//掩膜方式2：mask2与原图大小相同，有自己的内存空间，在mask上标记矩形ROI区域，后再与原图进行与/或运算
+	Mat mask2 = Mat::zeros(mag.size(), CV_8UC1);//先黑
+	//Mat mask2 = Mat::ones(mag.size(), CV_8UC1);//先白
+	//Rect r1(cx / 4, cy / 4, cx * 3 / 2, cy * 3 /2 );
+	Rect r1(cx - cx / 4, cy - cy / 4, cx / 2, cy / 2);
+	mask2(r1).setTo(255); //后白 去掉周围区域
+	/*///////////////////////////////////////////////////
+	Rect r1(0, 0, cx / 16, cy / 16);
+	Rect r2(2 * cx - cx / 16, 0, cx / 16, cy / 16);
+	Rect r3(0, 2 * cy - cy / 16, cx / 16, cy / 16);
+	Rect r4(2 * cx - cx / 16, 2 * cy - cy / 16, cx / 16, cy / 16);
+	mask2(r1).setTo(0); //后白 去掉周围区域
+	mask2(r2).setTo(0); //后白 去掉周围区域
+	mask2(r3).setTo(0); //后白 去掉周围区域
+	mask2(r4).setTo(0); //后白 去掉周围区域
+	////////////////////////////////////////////////////**/
+	mag.copyTo(mag2, mask2);//mask非零即拷贝
+	imshow("mag2", mag2);
+
+	///////////////////////////////////////////////////////////////////////////////////////////
+	proceMag = mag2 * 255;
+	imwrite("处理后频谱2.jpg", proceMag);
+	//前述步骤反着来一遍，目的是为了逆变换回原图
+	Mat q00(mag2, Rect(0, 0, cx, cy));
+	Mat q10(mag2, Rect(cx, 0, cx, cy));
+	Mat q20(mag2, Rect(0, cy, cx, cy));
+	Mat q30(mag2, Rect(cx, cy, cx, cy));
+
+	//交换象限
+	q00.copyTo(tmp);
+	q30.copyTo(q00);
+	tmp.copyTo(q30);
+	q10.copyTo(tmp);
+	q20.copyTo(q10);
+	tmp.copyTo(q20);
+
+	mag2 = mag2 * maxVal; //将归一化的矩阵还原
+	exp(mag2, mag2);//对应于前述去对数
+	mag2 = mag2 - Scalar::all(1);//对应前述+1
+	polarToCart(mag2, ph, planes[0], planes[1]);//由幅度谱mag2和相位谱ph恢复实部planes[0]和虚部planes[1]
+	merge(planes, 2, complexImg);//将实部虚部合并
+
+
+	//-----------------------傅里叶的逆变换-----------------------------------
+	Mat ifft(Size(src.cols, src.rows), CV_8UC1);
+	//傅里叶逆变换
+	idft(complexImg, ifft, DFT_REAL_OUTPUT);
+	normalize(ifft, ifft, 0, 1, CV_MINMAX);
+
+	Rect rect(0, 0, src.cols, src.rows);
+	dst = ifft(rect);
+	dst = dst * 255;
+
+	dst.convertTo(dspMat2, CV_8UC1);
+	imshow("dst2", dspMat2);
+	imshow("src2", src);
+
+	return 0;
+
+}
+void ADD2()
+{
+	//add(dspMat, dspMat2, dspMat3);
+	//cout << dspMat.size() << dspMat2.size() << dspMat3.size() << endl;
+	dspMat3 = (dspMat + dspMat2) / 2;
+	imshow("dst3", dspMat3);
+	waitKey(0);
+ }
+
+/*
+int ifftDemo()
+{
+	cv::Mat dst;
+
+	cv::Mat src = imread("D://image/timg18.jpg", 0);
 
 	int m = getOptimalDFTSize(src.rows); //2,3,5的倍数有更高效率的傅里叶变换
 	int n = getOptimalDFTSize(src.cols); 
@@ -470,21 +733,47 @@ int ifftDemo()
 	//imshow("频谱幅度", mag);
 	mag = mag * 255;
 	imwrite("原频谱.jpg", mag);
-	/*--------------------------------------------------*/
+	
 
 	mag = mag / 255;
-	Mat proceMag;
+	Mat mag2;
+	Mat proceMag, proceMag2;
 
-	Mat mask1(mag.cols,mag.rows,CV_8UC3,)
+	//掩膜方式2：mask2与原图大小相同，有自己的内存空间，在mask上标记矩形ROI区域，后再与原图进行与/或运算
+	Mat mask2 = Mat::zeros(mag.size(), CV_8UC1);//先黑
+	//Mat mask2 = Mat::ones(mag.size(), CV_8UC1);//先白
+	//Rect r1(cx / 4, cy / 4, cx * 3 / 2, cy * 3 /2 );
+	Rect r1(cx - cx / 8, cy - cy / 8, cx / 4, cy / 4);
+	mask2(r1).setTo(255); //后白 去掉周围区域
+	////////////////////////////////////////////////////
+	Rect r1(0, 0, cx/16, cy/16);
+	Rect r2(2*cx-cx/16, 0, cx/16, cy/16);
+	Rect r3(0, 2*cy-cy/16, cx/16, cy/16);
+	Rect r4(2*cx-cx/16,2*cy-cy/16, cx/16, cy/16);
+	mask2(r1).setTo(0); //后白 去掉周围区域
+	mask2(r2).setTo(0); //后白 去掉周围区域
+	mask2(r3).setTo(0); //后白 去掉周围区域
+	mask2(r4).setTo(0); //后白 去掉周围区域
+	////////////////////////////////////////////////////
+	mag.copyTo(mag2, mask2);//mask非零即拷贝
+	imshow("mag2", mag2);
 
-	//selectPolygon(mag, mask);
+	//掩膜方式1：直接在原图上定义ROI区域，对原图ROI进行操作，mask和ROI共名称
+	Mat mask(mag, Rect(cx -cx / 8, cy - cy / 8, cx / 4, cy / 4));
+	//Mat mask(mag, Rect(cx - cx / 16, cy - cy / 16, cx / 8, cy / 8));
+	//imshow("mask", mask);
+	mask.setTo(0);//直接黑 去掉中间部分
+	imshow("mag", mag);
+	
+	/*imshow("mask1", mask1);
+
+	selectPolygon(mag, mask);
 	imshow("mask", mask);
 
-	mag = mag.mul(mask);
-
+	mag = mag.mul(mask1);
+	///////////////////////////////////////////////////////////////////////////////////////////
 	proceMag = mag * 255;
 	imwrite("处理后频谱.jpg", proceMag);
-
 	//前述步骤反着来一遍，目的是为了逆变换回原图
 	Mat q00(mag, Rect(0, 0, cx, cy));
 	Mat q10(mag, Rect(cx, 0, cx, cy));
@@ -499,7 +788,7 @@ int ifftDemo()
 	q20.copyTo(q10);
 	tmp.copyTo(q20);
 
-	mag = mag * maxVal;//将归一化的矩阵还原 
+	mag = mag * maxVal; //将归一化的矩阵还原 
 	exp(mag, mag);//对应于前述去对数
 	mag = mag - Scalar::all(1);//对应前述+1
 	polarToCart(mag, ph, planes[0], planes[1]);//由幅度谱mag和相位谱ph恢复实部planes[0]和虚部planes[1]
@@ -520,8 +809,54 @@ int ifftDemo()
 	dst.convertTo(dspMat, CV_8UC1);
 	imshow("dst", dspMat);
 	imshow("src", src);
+	///////////////////////////////////////////////////////////////////////////////////////
+	///////////////////////////////////////////////////////////////////////////////////////////////////
+	Mat planes2[] = { Mat_<float>(padded), Mat::zeros(padded.size(), CV_32F) };
+	Mat planes_true2 = Mat_<float>(padded);//实部
+	Mat ph2 = Mat_<float>(padded);//虚部
+	Mat complexImg2;
+
+	proceMag2 = mag2 * 255;
+	imwrite("处理后频谱2.jpg", proceMag2);
+
+	//前述步骤反着来一遍，目的是为了逆变换回原图
+	Mat q002(mag2, Rect(0, 0, cx, cy));
+	Mat q102(mag2, Rect(cx, 0, cx, cy));
+	Mat q202(mag2, Rect(0, cy, cx, cy));
+	Mat q302(mag2, Rect(cx, cy, cx, cy));
+
+	//交换象限
+	q002.copyTo(tmp);
+	q302.copyTo(q002);
+	tmp.copyTo(q302);
+	q102.copyTo(tmp);
+	q202.copyTo(q102);
+	tmp.copyTo(q202);
+
+	mag2 = mag2 * maxVal;//将归一化的矩阵还原 
+	exp(mag2, mag2);//对应于前述去对数
+	mag2 = mag2 - Scalar::all(1);//对应前述+1
+	polarToCart(mag2, ph2, planes2[0], planes2[1]);//由幅度谱mag和相位谱ph恢复实部planes[0]和虚部planes[1]
+	merge(planes2, 2, complexImg2);//将实部虚部合并
+
+
+	//-----------------------傅里叶的逆变换-----------------------------------
+	Mat ifft2(Size(src.cols, src.rows), CV_8UC1);
+	//傅里叶逆变换
+	idft(complexImg2, ifft2, DFT_REAL_OUTPUT);
+	normalize(ifft2, ifft2, 0, 1, CV_MINMAX);
+
+	Mat dst2;
+	dst2 = ifft2(rect);
+	dst2 = dst2 * 255;
+
+	cv::Mat dspMat2;
+	dst2.convertTo(dspMat2, CV_8UC1);
+	imshow("dst2", dspMat2);
+
+
 	waitKey(0);
 
 	return 0;
 
-}
+}/**/

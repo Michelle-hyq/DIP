@@ -17,6 +17,8 @@ int main()
 	//dftDemo();
 	//mouseROI();
 	ifftDemo();
+	ifftDemo2();
+	ADD2();
 	//结束计时
 	double time = ((double)cvGetTickCount() - start) / cvGetTickFrequency();
 	//显示时间
