@@ -16,21 +16,6 @@ VideoCapture createInput(bool useCamera, std::string videoPath)
 	return capVideo;
 }
 int createMaskByKmeans(cv::Mat src, cv::Mat& mask);
-void segColor()
-{
-
-	Mat src = imread("../testImages\\movie.jpg");
-
-	Mat mask = Mat::zeros(src.size(), CV_8UC1);
-	createMaskByKmeans(src, mask);
-
-	imshow("src", src);
-	imshow("mask", mask);
-
-	waitKey(0);
-
-}
-
 int kMeansDemo()
 {
 	const int MAX_CLUSTERS = 5;
@@ -97,7 +82,20 @@ int kMeansDemo()
 
 	return 0;
 }
+void segColor()
+{
 
+	Mat src = imread("D://image/timg24.jpg");
+
+	Mat mask = Mat::zeros(src.size(), CV_8UC1);
+	createMaskByKmeans(src, mask);
+
+	imshow("src", src);
+	imshow("mask", mask);
+
+	waitKey(0);
+
+}
 int createMaskByKmeans(cv::Mat src, cv::Mat& mask)
 {
 	if ((mask.type() != CV_8UC1)
@@ -114,14 +112,6 @@ int createMaskByKmeans(cv::Mat src, cv::Mat& mask)
 	Mat labels;
 	Mat centers;
 
-	uchar fg[2] = { 0,25 };
-	for (int row = 0; row < height; row++)
-	{
-		for (int col = 0; col < width; col++) {
-			mask.at<uchar>(row, col) = fg[labels.at<int>(row + width + col)];
-		}
-	}
-
 	//制作kmeans用的数据
 	Mat sampleData = src.reshape(3, pixNum);
 	Mat km_data;
@@ -129,7 +119,7 @@ int createMaskByKmeans(cv::Mat src, cv::Mat& mask)
 
 	//执行kmeans
 	TermCriteria criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 10, 0.1);
-	kmeans(km_data, 5, labels, criteria, 5, KMEANS_PP_CENTERS, centers);
+	kmeans(km_data, 2, labels, criteria, 10, KMEANS_PP_CENTERS, centers);
 
 	//制作mask
 	uchar fg[2] = { 0,255 };
