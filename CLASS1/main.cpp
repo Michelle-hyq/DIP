@@ -8,15 +8,24 @@
 using namespace cv;
 using namespace std;
 
+void test_1()
+{
+	kMeansDemo();
+}
+void test_2()
+{
+	segColor();
+}
+void test_3()
+{
+	segColor_1();
+}
 int main()
 {
 	//开始计时
 	double start = static_cast<double>(cvGetTickCount());
-
-	segColor();
-
-	//kMeansDemo();
-
+	
+	test_3();
 	//结束计时
 	double time = ((double)cvGetTickCount() - start) / cvGetTickFrequency();
 	//显示时间
