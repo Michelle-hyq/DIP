@@ -4,16 +4,11 @@
 using namespace cv;
 using namespace std;
 
-int removeFrequnce();
-int dftDemo();
-int ifftDemo();
-int ifftDemo2();
-void ADD2();
-int mouseROI();
+VideoCapture createInput(bool useCamera, std::string videoPath);
 
 
-void on_mouse(int EVENT, int x, int y, int flags, void* userdata);
-int selectPolygon(cv::Mat srcMat, cv::Mat& dstMat);
-int calcVisibalMag(cv::Mat srcMat, cv::Mat& dstMat);
-int calcVisbalDft(cv::Mat srcMat, cv::Mat& magMat, cv::Mat& ph, double& normVal);
-int calcDft2Image(cv::Mat magMat, cv::Mat ph, double normVal, cv::Mat & dstMat); 
+
+void segColor();
+int kMeansDemo();
+
+int createMaskByKmeans(cv::Mat src, cv::Mat& mask);

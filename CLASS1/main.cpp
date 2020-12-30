@@ -1,10 +1,9 @@
-
 // dip-class-demos.cpp : 定义控制台应用程序的入口点。
 //
+
+#include "stdafx.h"
 #include <opencv.hpp>
 #include "funtions.h"
-#include "stdafx.h"
-//#include <time.h>
 
 using namespace cv;
 using namespace std;
@@ -14,11 +13,10 @@ int main()
 	//开始计时
 	double start = static_cast<double>(cvGetTickCount());
 
-	//dftDemo();
-	//mouseROI();
-	ifftDemo();
-	ifftDemo2();
-	ADD2();
+	segColor();
+
+	//kMeansDemo();
+
 	//结束计时
 	double time = ((double)cvGetTickCount() - start) / cvGetTickFrequency();
 	//显示时间
