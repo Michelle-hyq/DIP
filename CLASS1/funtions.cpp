@@ -2,523 +2,325 @@
 #include "funtions.h"
 
 
-std::vector<Point>  mousePoints;
-Point points;
-/******************************************************************************************************************************
-														傅里叶变换demo（主函数）
-*****************************************************************************************************************************/
+std::vector<std::string> classes;
 
-int dftDemo() {
+float confThreshold = 0.5; // Confidence threshold
+float nmsThreshold = 0.4;  // Non-maximum suppression threshold
+int inpWidth = 416;        // Width of network's input image
+int inpHeight = 416;       // Height of network's input image
 
-	cv::Mat srcMat = imread("D://image/timg6.jpg", 0);
-	cv::Mat magMat;
 
-	if (srcMat.empty()) {
-		std::cout << "failed to read image!:" << std::endl;
-		return -1;
-	}
+// key point 连接表, [model_id][pair_id][from/to]
+// 详细解释见
+// https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/output.md
 
-	//把图像转换为可视的傅里叶变换图像
-	calcVisibalMag(srcMat, magMat);
+int POSE_PAIRS[3][20][2] = {
+	{   // COCO body
+		{ 1,2 },{ 1,5 },{ 2,3 },
+		{ 3,4 },{ 5,6 },{ 6,7 },
+		{ 1,8 },{ 8,9 },{ 9,10 },
+		{ 1,11 },{ 11,12 },{ 12,13 },
+		{ 1,0 },{ 0,14 },
+		{ 14,16 },{ 0,15 },{ 15,17 }
+	},
+	{   // MPI body
+		{ 0,1 },{ 1,2 },{ 2,3 },
+		{ 3,4 },{ 1,5 },{ 5,6 },
+		{ 6,7 },{ 1,14 },{ 14,8 },{ 8,9 },
+		{ 9,10 },{ 14,11 },{ 11,12 },{ 12,13 }
+	},
+	{   // hand
+		{ 0,1 },{ 1,2 },{ 2,3 },{ 3,4 },         // thumb
+		{ 0,5 },{ 5,6 },{ 6,7 },{ 7,8 },         // pinkie
+		{ 0,9 },{ 9,10 },{ 10,11 },{ 11,12 },    // middle
+		{ 0,13 },{ 13,14 },{ 14,15 },{ 15,16 },  // ring
+		{ 0,17 },{ 17,18 },{ 18,19 },{ 19,20 }   // small
+	} };
 
-	imshow("Input Image", srcMat);    // Show the result
-	imshow("spectrum magnitude", magMat);
-	waitKey(0);
-
-	return 0;
-
-}
-
-/*******************************************
-1.输入一张图片，计算其可视化的幅值谱
-2.再幅值谱图上，通过鼠标选择需要去除的频率
-3.去除被选择的信号，然后复原图像
-********************************************/
-int removeFrequnce()
+std::vector<cv::String> getOutputsNames(const cv::dnn::Net& net)
 {
-	cv::Mat srcMat = imread("D://image/timg6.jpg", 0);
-	cv::Mat magMat;
-	cv::Mat phMat;
-	cv::Mat maskMat;
-	double normVal;
-
-	if (srcMat.empty()) {
-		std::cout << "failed to read image!:" << std::endl;
-		return -1;
-	}
-
-	//输出可视化的mag，以及相位谱，以及归一化系数
-	calcVisbalDft(srcMat, magMat, phMat, normVal);
-
-	//在幅值谱上，通过鼠标选择，需要去掉的频率
-	selectPolygon(magMat, maskMat);
-
-	//逆变换
-
-
-	return 0;
-}
-
-
-/***************************************鼠标响应函数*******************************************/
-void on_mouse(int EVENT, int x, int y, int flags, void* userdata)
-{
-
-	Mat hh;
-	hh = *(Mat*)userdata;
-	Point p(x, y);
-	switch (EVENT)
+	static std::vector<cv::String> names;
+	if (names.empty())
 	{
-	case EVENT_LBUTTONDOWN:
-	{
-		points.x = x;
-		points.y = y;
-		mousePoints.push_back(points);
-		circle(hh, points, 4, cvScalar(255, 255, 255), -1);
-		imshow("mouseCallback", hh);
-	}
-	break;
-	}
+		//Get the indices of the output layers, i.e. the layers with unconnected outputs
+		std::vector<int> outLayers = net.getUnconnectedOutLayers();
 
+		//get the names of all the layers in the network
+		std::vector<cv::String> layersNames = net.getLayerNames();
+
+		// Get the names of the output layers in names
+		names.resize(outLayers.size());
+		for (size_t i = 0; i < outLayers.size(); ++i)
+			names[i] = layersNames[outLayers[i] - 1];
+	}
+	return names;
 }
 
-
-int selectPolygon(cv::Mat srcMat, cv::Mat& dstMat)
+//非极大值抑制，去除置信度较小的检测结果
+void postprocess(cv::Mat& frame, std::vector<cv::Mat>& outs)
 {
+	std::vector<int> classIds;
+	std::vector<float> confidences;
+	std::vector<cv::Rect> boxes;
 
-	vector<vector<Point>> contours;
-	cv::Mat selectMat;
+	for (size_t i = 0; i < outs.size(); ++i)
+	{
+		// Scan through all the bounding boxes output from the network and keep only the
+		// ones with high confidence scores. Assign the box's class label as the class
+		// with the highest score for the box.
+		//
+		float* data = (float*)outs[i].data;
+		for (int j = 0; j < outs[i].rows; ++j, data += outs[i].cols)
+		{
+			cv::Mat scores = outs[i].row(j).colRange(5, outs[i].cols);
+			cv::Point classIdPoint;
+			double confidence;
 
-	cv::Mat m = cv::Mat::zeros(srcMat.size(), CV_32F);
+			//获得得分最高的结果的分值和位置
+			cv::minMaxLoc(scores, 0, &confidence, 0, &classIdPoint);
 
-	m = 1;
+			if (confidence > confThreshold)
+			{
+				int centerX = (int)(data[0] * frame.cols);
+				int centerY = (int)(data[1] * frame.rows);
+				int width = (int)(data[2] * frame.cols);
+				int height = (int)(data[3] * frame.rows);
+				int left = centerX - width / 2;
+				int top = centerY - height / 2;
 
-	if (!srcMat.empty()) {
-		srcMat.copyTo(selectMat);
-		srcMat.copyTo(dstMat);
+				classIds.push_back(classIdPoint.x);
+				confidences.push_back((float)confidence);
+				boxes.push_back(cv::Rect(left, top, width, height));
+			}
+		}
+	}
+
+	//非极大值抑制，去除置信度较小的检测结果
+	std::vector<int> indices;
+	cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
+	for (size_t i = 0; i < indices.size(); ++i)
+	{
+		int idx = indices[i];
+		cv::Rect box = boxes[idx];
+		drawPred(classIds[idx], confidences[idx], box.x, box.y,
+			box.x + box.width, box.y + box.height, frame);
+	}
+}
+
+//检测结果绘制
+void drawPred(int classId, float conf, int left, int top, int right, int bottom, cv::Mat& frame)
+{
+	//绘制检测框
+	cv::rectangle(frame, cv::Point(left, top), cv::Point(right, bottom), cv::Scalar(0, 0, 255));
+
+	//获得识别结果的类名称，以及置信度
+	std::string label = cv::format("%.2f", conf);
+	if (!classes.empty())
+	{
+		CV_Assert(classId < (int)classes.size());
+		label = classes[classId] + ":" + label;
+	}
+	else
+	{
+		std::cout << "classes is empty..." << std::endl;
+	}
+
+	//绘制标签
+	int baseLine;
+	cv::Size labelSize = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.5, 2, &baseLine);
+	top = std::max(top, labelSize.height);
+	cv::putText(frame, label, cv::Point(left, top), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+}
+
+//opencv 调用 yolov3 demo
+int yoloV3()
+{
+	//yolov3网络模型文件
+	String yolov3_model = "D:\\yolov3.cfg";
+	//权重
+	String weights = "D:\\yolov3.weights";
+	cv::dnn::Net net = cv::dnn::readNetFromDarknet(yolov3_model, weights);
+
+	VideoCapture cap(YOLOV3_VIDEO);
+
+	if (!cap.isOpened())return -1;
+
+
+	//coco数据集的名称文件，80类
+	string classesFile = "D:\\image\\class15\\coco.names";
+	//将coco.names中的80类名称转换为vector形式
+	std::ifstream classNamesFile(classesFile.c_str());
+	if (classNamesFile.is_open())
+	{
+		std::string className = "";
+		// getline (istream&  is, string& str)
+		//is为输入，从is中读取读取的字符串保存在string类型的str中，如果没有读入字符返回false，循环结束
+		while (std::getline(classNamesFile, className)) {
+			classes.push_back(className);
+		}
 	}
 	else {
-		std::cout << "failed to read image!:" << std::endl;
-		return -1;
+		std::cout << "can not open classNamesFile" << std::endl;
+	}
+	
+
+	net.setPreferableBackend(DNN_BACKEND_DEFAULT);
+	net.setPreferableTarget(DNN_TARGET_CPU);
+
+	cv::Mat frame;
+
+	while (1)
+	{
+		cap >> frame;
+
+		if (frame.empty()) {
+			std::cout << "frame is empty!!!" << std::endl;
+			return -1;
+		}
+
+		//创建yolo输入数据
+		cv::Mat blob;
+		cv::dnn::blobFromImage(frame, blob, 1 / 255.0, cv::Size(inpWidth, inpHeight), cv::Scalar(0, 0, 0), true, false);
+
+		//输入网络
+		net.setInput(blob);
+
+		//定义输出结果保存容器
+		std::vector<cv::Mat> outs;
+		//前向传输获得结果
+		net.forward(outs, getOutputsNames(net));
+
+		//后处理，非极大值抑制，绘制检测框
+		postprocess(frame, outs);
+
+		cv::imshow("frame", frame);
+
+		if (cv::waitKey(10) == 27)
+		{
+			break;
+		}
 	}
 
-	namedWindow("mouseCallback");
-	imshow("mouseCallback", selectMat);
-	setMouseCallback("mouseCallback", on_mouse, &selectMat);
-	waitKey(0);
-	destroyAllWindows();
-	//计算roi
-	contours.push_back(mousePoints);
-	if (contours[0].size() < 3) {
-		std::cout << "failed to read image!:" << std::endl;
-		return -1;
+	return 0;
+
+}
+
+int openpose()
+{
+
+	//读入网络模型和权重文件
+	String modelTxt = "D:\\image\\class15\\openpose_pose_coco.prototxt";
+	String modelBin = "D:\\image\\class15\\pose_iter_440000.caffemodel";
+
+	cv::dnn::Net net = cv::dnn::readNetFromCaffe(modelTxt, modelBin);
+
+	int W_in = 368;
+	int H_in = 368;
+	float thresh = 0.1;
+
+	VideoCapture cap;
+	cap.open(OPENPOSE_VIDEO);
+
+	if (!cap.isOpened())return -1;
+
+	while (1) {
+
+		cv::Mat frame;
+
+		cap >> frame;
+
+		if (frame.empty()) {
+			std::cout << "frame is empty!!!" << std::endl;
+			return -1;
+		}
+
+		//创建输入
+		Mat inputBlob = blobFromImage(frame, 1.0 / 255, Size(W_in, H_in), Scalar(0, 0, 0), false, false);
+
+		//输入
+		net.setInput(inputBlob);
+
+		//得到网络输出结果，结果为热力图
+		Mat result = net.forward();
+
+		int midx, npairs;
+		int H = result.size[2];
+		int W = result.size[3];
+
+		//得到检测结果的关键点点数
+		int nparts = result.size[1];
+
+
+		// find out, which model we have
+		//判断输出的模型类别
+		if (nparts == 19)
+		{   // COCO body
+			midx = 0;
+			npairs = 17;
+			nparts = 18; // skip background
+		}
+		else if (nparts == 16)
+		{   // MPI body
+			midx = 1;
+			npairs = 14;
+		}
+		else if (nparts == 22)
+		{   // hand
+			midx = 2;
+			npairs = 20;
+		}
+		else
+		{
+			cerr << "there should be 19 parts for the COCO model, 16 for MPI, or 22 for the hand one, but this model has " << nparts << " parts." << endl;
+			return (0);
+		}
+
+		// 获得身体各部分坐标
+		vector<Point> points(22);
+		for (int n = 0; n < nparts; n++)
+		{
+			// Slice heatmap of corresponding body's part.
+			Mat heatMap(H, W, CV_32F, result.ptr(0, n));
+			// 找到最大值的点
+			Point p(-1, -1), pm;
+			double conf;
+			minMaxLoc(heatMap, 0, &conf, 0, &pm);
+			//判断置信度
+			if (conf > thresh) {
+				p = pm;
+			}
+			points[n] = p;
+		}
+
+		//连接身体各个部分，并且绘制
+		float SX = float(frame.cols) / W;
+		float SY = float(frame.rows) / H;
+		for (int n = 0; n < npairs; n++)
+		{
+			Point2f a = points[POSE_PAIRS[midx][n][0]];
+			Point2f b = points[POSE_PAIRS[midx][n][1]];
+
+			//如果前一个步骤没有找到相应的点，则跳过
+			if (a.x <= 0 || a.y <= 0 || b.x <= 0 || b.y <= 0)
+				continue;
+
+			// 缩放至图像的尺寸
+			a.x *= SX; a.y *= SY;
+			b.x *= SX; b.y *= SY;
+
+			//绘制
+			line(frame, a, b, Scalar(0, 200, 0), 2);
+			circle(frame, a, 3, Scalar(0, 0, 200), -1);
+			circle(frame, b, 3, Scalar(0, 0, 200), -1);
+		}
+
+		imshow("frame", frame);
+
+		waitKey(30);
+
 	}
 
-	drawContours(m, contours, 0, Scalar(0), -1);
-
-	m.copyTo(dstMat);
-
-	return 0;
-}
-
-
-/***********输入一张图片，输出其傅里叶变换后的可视化的幅值谱********************/
-int calcVisibalMag(cv::Mat srcMat, cv::Mat& dstMat)
-{
-
-	if (srcMat.empty()) {
-		std::cout << "failed to read image!:" << std::endl;
-		return -1;
-	}
-
-	Mat padMat;
-	//当图像的尺寸是2，3，5的整数倍时，离散傅里叶变换的计算速度最快。	
-	//获得输入图像的最佳变换尺寸
-	int m = getOptimalDFTSize(srcMat.rows);
-	int n = getOptimalDFTSize(srcMat.cols);
-
-
-	//对新尺寸的图片进行边缘边缘填充
-	/************************************************
-	copyMakeBorder（） 函数模型：
-	copyMakeBorder(InputArray src, OutputArray dst,
-								 int top, int bottom, int left, int right,
-								 int borderType, const Scalar& value = Scalar() );
-	参数介绍：
-	. InputArray src：InputArray类型的src
-	. OutputArray dst：输出图像
-	. int top, int bottom, int left, int right：表示对边界每个方向添加的像素个数
-	. int borderType: 表示扩充边界的类型，如BORDER_REPLICATE 就是对边界像素进行复制， BORDER_REFLECT 反射：对感兴趣的图像中的像素在两边进行复制
-	. const Scalar& value :边界的颜色值
-	**************************************************/
-	copyMakeBorder(srcMat, padMat, 0, m - srcMat.rows, 0, n - srcMat.cols, BORDER_CONSTANT, Scalar::all(0));
-
-
-
-
-	//定义一个数组,存储频域转换成float类型的对象，再存储一个和它一样大小空间的对象来存储复数部分
-	Mat planes[] = { Mat_<float>(padMat), Mat::zeros(padMat.size(), CV_32F) };
-	Mat complexMat;
-
-	//将2个单通道的图像合成一幅多通道图像
-	/************************************************
-	merge（） 函数模型：
-	merge(const Mat* mv, size_t count, OutputArray dst);
-	参数介绍：
-	. const Mat* mv：Mat型数组
-	. size_t count：需合并数组个数
-	. OutputArray dst：输出矩阵
-	**************************************************/
-	merge(planes, 2, complexMat);
-
-
-	//进行傅里叶变换,结果保存在原Mat里,傅里叶变换结果为复数.通道1存的是实部,通道二存的是虚部
-	/************************************************
-	dft（） 函数模型：
-	dft(InputArray src, OutputArray dst, int flags = 0, int nonzeroRows = 0);
-	参数介绍：
-	. InputArray src：输入图像，可以是实数或虚数
-	. OutputArray dst：输出图像，其大小和类型取决于第三个参数flags
-	. int flags：转换的标识符，有默认值0
-	. int nonzeroRows: 当这个参数不为0，函数会假设只有输入数组（没有设置DFT_INVERSE）的第一行或第一个输出数组（设置了DFT_INVERSE）包含非零值。
-	**************************************************/
-	dft(complexMat, complexMat);
-
-
-	//将双通道的图分离成量个单通道的图 
-	//实部：planes[0] = Re(DFT(I),
-	//虚部：planes[1]=  Im(DFT(I))) 
-	split(complexMat, planes);
-	//求相位，保存在planes[0]
-	magnitude(planes[0], planes[1], planes[0]);
-
-	//以下步骤均为了显示方便
-	Mat magMat = planes[0];
-	// log(1 + sqrt(Re(DFT(I))^2 + Im(DFT(I))^2))
-	magMat += Scalar::all(1);
-	//取对数
-	/************************************************
-	log（） 函数模型：
-	log(InputArray src, OutputArray dst);
-	参数介绍：
-	. InputArray src：输入图像，可以是实数或虚数
-	. OutputArray dst：输出得到的对数值
-	**************************************************/
-	log(magMat, magMat);
-
-	//确保对称
-	magMat = magMat(Rect(0, 0, magMat.cols & -2, magMat.rows & -2));
-	int cx = magMat.cols / 2;
-	int cy = magMat.rows / 2;
-	//将图像移相
-	/*
-	0 | 1         3 | 2
-	-------  ===> -------
-	2 | 3         1 | 0
-	*/
-	Mat q0(magMat, Rect(0, 0, cx, cy));
-	Mat q1(magMat, Rect(cx, 0, cx, cy));
-	Mat q2(magMat, Rect(0, cy, cx, cy));
-	Mat q3(magMat, Rect(cx, cy, cx, cy));
-	Mat tmp;
-	q0.copyTo(tmp);
-	q3.copyTo(q0);
-	tmp.copyTo(q3);
-	q1.copyTo(tmp);
-	q2.copyTo(q1);
-	tmp.copyTo(q2);
-
-	//为了imshow可以显示，归一化到0和1之间
-	/************************************************
-	normalize（） 函数模型：
-	normalize( InputArray src, InputOutputArray dst, double alpha = 1, double beta = 0,
-							 int norm_type = NORM_L2, int dtype = -1, InputArray mask = noArray());
-	参数介绍：
-			InputArray src：输入数组
-			InputOutputArray dst：输出数组，支持原地运算
-			double alpha：range normalization模式的最小值
-			double beta：range normalization模式的最大值，不用于norm normalization(范数归一化)模式。
-			normType：归一化的类型，可以有以下的取值：
-					  NORM_MINMAX:数组的数值被平移或缩放到一个指定的范围，线性归一化，一般较常用。
-					  NORM_INF:此类型的定义没有查到，根据OpenCV 1的对应项，可能是归一化数组的C-范数(绝对值的最大值)
-					  NORM_L1 : 归一化数组的L1-范数(绝对值的和)
-					  NORM_L2: 归一化数组的(欧几里德)L2-范数
-			dtype：dtype为负数时，输出数组的type与输入数组的type相同；否则，输出数组与输入数组只是通道数相同，而tpye=CV_MAT_DEPTH(dtype).
-			mask：操作掩膜，用于指示函数是否仅仅对指定的元素进行操作
-	**************************************************/
-	normalize(magMat, magMat, 0, 1, NORM_MINMAX);
-	magMat = magMat * 255;
-	magMat.copyTo(dstMat);
-
-	return 0;
-}
-
-
-//输入一张图片，输出其傅里叶变换后的可视化的幅值谱
-//同时输出相位谱，和还原归一化时的系数，即最大值
-int calcVisbalDft(cv::Mat srcMat, cv::Mat& magMat, cv::Mat& ph, double& normVal)
-{
-	cv::Mat dst;
-	cv::Mat src = imread("D://image/timg6.jpg", 0);
-
-	int m = getOptimalDFTSize(src.rows); //2,3,5的倍数有更高效率的傅里叶变换
-	int n = getOptimalDFTSize(src.cols);
-	Mat padded;
-	//把灰度图像放在左上角,在右边和下边扩展图像,扩展部分填充为0;
-	copyMakeBorder(src, padded, 0, m - src.rows, 0, n - src.cols, BORDER_CONSTANT, Scalar::all(0));
-	//planes[0]为dft变换的实部，planes[1]为虚部，ph为相位， plane_true=mag为幅值
-	Mat planes[] = { Mat_<float>(padded), Mat::zeros(padded.size(), CV_32F) };
-	Mat planes_true = Mat_<float>(padded);
-
-	//保存相位（Mat_代表确定了数据类型，访问元素时不需要再指定元素类型）
-	ph = Mat_<float>(padded);
-
-	Mat complexImg;
-	//多通道complexImg既有实部又有虚部
-
-	merge(planes, 2, complexImg);
-	//对上边合成的mat进行傅里叶变换,***支持原地操作***,傅里叶变换结果为复数.通道1存的是实部,通道二存的是虚部
-	dft(complexImg, complexImg);
-	//把变换后的结果分割到两个mat,一个实部,一个虚部,方便后续操作
-	split(complexImg, planes);
-
-	//---------------此部分目的为更好地显示幅值---后续恢复原图时反着再处理一遍-------------------------
-	magnitude(planes[0], planes[1], planes_true);//幅度谱mag
-	phase(planes[0], planes[1], ph);//相位谱ph
-	Mat A = planes[0];
-	Mat B = planes[1];
-	Mat mag = planes_true;
-
-	mag += Scalar::all(1);//对幅值加1
-						  //计算出的幅值一般很大，达到10^4,通常没有办法在图像中显示出来，需要对其进行log求解。
-	log(mag, mag);
-
-	//取矩阵中的最大值，便于后续还原时去归一化
-	minMaxLoc(mag, 0, &normVal, 0, 0);
-
-	//修剪频谱,如果图像的行或者列是奇数的话,那其频谱是不对称的,因此要修剪
-	mag = mag(Rect(0, 0, mag.cols & -2, mag.rows & -2));
-	ph = ph(Rect(0, 0, mag.cols & -2, mag.rows & -2));
-	Mat _magI = mag.clone();
-	//将幅度归一化到可显示范围。
-	normalize(_magI, _magI, 0, 1, CV_MINMAX);
-	//imshow("before rearrange", _magI);
-
-	//显示规则频谱图
-	int cx = mag.cols / 2;
-	int cy = mag.rows / 2;
-
-	//这里是以中心为标准，把mag图像分成四部分
-	Mat tmp;
-	Mat q0(mag, Rect(0, 0, cx, cy));
-	Mat q1(mag, Rect(cx, 0, cx, cy));
-	Mat q2(mag, Rect(0, cy, cx, cy));
-	Mat q3(mag, Rect(cx, cy, cx, cy));
-	q0.copyTo(tmp);
-	q3.copyTo(q0);
-	tmp.copyTo(q3);
-	q1.copyTo(tmp);
-	q2.copyTo(q1);
-	tmp.copyTo(q2);
-
-	normalize(mag, mag, 0, 1, CV_MINMAX);
-	mag = mag * 255;
-
-	return 0;
-}
-
-int calcDft2Image(cv::Mat magMat, cv::Mat ph, double normVal, cv::Mat& dstMat)
-{
-	Mat mag = magMat.clone();
-	Mat proceMag;
-	//planes[0]为dft变换的实部，planes[1]为虚部，ph为相位， plane_true=mag为幅值
-	Mat planes[] = { Mat_<float>(mag), Mat::zeros(mag.size(), CV_32F) };
-	Mat planes_true = Mat_<float>(mag);
-
-	Mat complexImg;
-	//多通道complexImg既有实部又有虚部
-
-	mag = magMat / 255;
-
-	proceMag = mag * 255;
-
-	int cx = mag.cols / 2;
-	int cy = mag.rows / 2;
-	//前述步骤反着来一遍，目的是为了逆变换回原图
-	Mat q00(mag, Rect(0, 0, cx, cy));
-	Mat q10(mag, Rect(cx, 0, cx, cy));
-	Mat q20(mag, Rect(0, cy, cx, cy));
-	Mat q30(mag, Rect(cx, cy, cx, cy));
-
-	Mat tmp;
-	//交换象限
-	q00.copyTo(tmp);
-	q30.copyTo(q00);
-	tmp.copyTo(q30);
-	q10.copyTo(tmp);
-	q20.copyTo(q10);
-	tmp.copyTo(q20);
-
-	mag = mag * normVal;//将归一化的矩阵还原 
-	exp(mag, mag);		//对应于前述去对数
-	mag = mag - Scalar::all(1);//对应前述+1
-	polarToCart(mag, ph, planes[0], planes[1]);//由幅度谱mag和相位谱ph恢复实部planes[0]和虚部planes[1]
-	merge(planes, 2, complexImg);//将实部虚部合并
-
-
-	//-----------------------傅里叶的逆变换-----------------------------------
-	Mat ifft(Size(mag.cols, mag.rows), CV_8UC1);
-	//傅里叶逆变换
-	idft(complexImg, ifft, DFT_REAL_OUTPUT);
-	normalize(ifft, ifft, 0, 1, CV_MINMAX);
-
-	Rect rect(0, 0, mag.cols, mag.rows);
-	dstMat = ifft(rect);
-	dstMat = dstMat * 255;
-
-	/*cv::Mat dspMat;
-	dst.convertTo(dspMat, CV_8UC1);*/
 
 
 	return 0;
-}
-
-
-
-int mouseROI()
-{
-	cv::Mat srcMat = imread("D://image/timg6.jpg");
-	cv::Mat dstMat;
-
-	selectPolygon(srcMat, dstMat);
-
-	imshow("srcMat", srcMat);
-	imshow("select Area", dstMat);
-	waitKey(0);
-
-	return 0;
-}
-
-
-
-int ifftDemo()
-{
-	cv::Mat dst;
-
-	cv::Mat src = imread("D://image/timg6.jpg", 0);
-
-	int m = getOptimalDFTSize(src.rows); //2,3,5的倍数有更高效率的傅里叶变换
-	int n = getOptimalDFTSize(src.cols); 
-	Mat padded;
-	//把灰度图像放在左上角,在右边和下边扩展图像,扩展部分填充为0; 
-	copyMakeBorder(src, padded, 0, m - src.rows, 0, n - src.cols, BORDER_CONSTANT, Scalar::all(0));//扩充src的边缘，将图像变大，扩展边缘的信息
-	//planes[0]为dft变换的实部，planes[1]为虚部，ph为相位， plane_true=mag为幅值
-	Mat planes[] = { Mat_<float>(padded), Mat::zeros(padded.size(), CV_32F) };
-	Mat planes_true = Mat_<float>(padded);//实部
-	Mat ph = Mat_<float>(padded);//虚部
-	Mat complexImg;
-	//多通道complexImg既有实部又有虚部
-	merge(planes, 2, complexImg);//矩阵数组，需要合并矩阵的个数，输出
-	//对上边合成的mat进行傅里叶变换,***支持原地操作***,傅里叶变换结果为复数.通道1存的是实部,通道二存的是虚部
-	dft(complexImg, complexImg);
-	//把变换后的结果分割到两个mat,一个实部,一个虚部,方便后续操作
-	split(complexImg, planes);
-
-	//---------------此部分目的为更好地显示幅值---后续恢复原图时反着再处理一遍-------------------------
-	magnitude(planes[0], planes[1], planes_true);//幅度谱mag
-	phase(planes[0], planes[1], ph);//相位谱ph
-	Mat A = planes[0];
-	Mat B = planes[1];
-	Mat mag = planes_true;
-
-	mag += Scalar::all(1);//对幅值加1
-	//计算出的幅值一般很大，达到10^4,通常没有办法在图像中显示出来，需要对其进行log求解。
-	log(mag, mag);
-
-	//取矩阵中的最大值，便于后续还原时去归一化
-	double maxVal;
-	minMaxLoc(mag, 0, &maxVal, 0, 0);
-
-	//修剪频谱,如果图像的行或者列是奇数的话,那其频谱是不对称的,因此要修剪
-	mag = mag(Rect(0, 0, mag.cols & -2, mag.rows & -2));
-	ph = ph(Rect(0, 0, mag.cols & -2, mag.rows & -2));
-	Mat _magI = mag.clone();
-	//将幅度归一化到可显示范围。
-	normalize(_magI, _magI, 0, 1, CV_MINMAX);
-	//imshow("before rearrange", _magI);
-
-	//显示规则频谱图
-	int cx = mag.cols / 2;
-	int cy = mag.rows / 2;
-
-	//这里是以中心为标准，把mag图像分成四部分
-	Mat tmp;
-	Mat q0(mag, Rect(0, 0, cx, cy));
-	Mat q1(mag, Rect(cx, 0, cx, cy));
-	Mat q2(mag, Rect(0, cy, cx, cy));
-	Mat q3(mag, Rect(cx, cy, cx, cy));
-	q0.copyTo(tmp);
-	q3.copyTo(q0);
-	tmp.copyTo(q3);
-	q1.copyTo(tmp);
-	q2.copyTo(q1);
-	tmp.copyTo(q2);
-
-	normalize(mag, mag, 0, 1, CV_MINMAX);
-	//imshow("原图灰度图", src);
-	//imshow("频谱幅度", mag);
-	mag = mag * 255;
-	imwrite("原频谱.jpg", mag);
-	/*--------------------------------------------------*/
-
-	mag = mag / 255;
-	cv::Mat mask;
-	Mat proceMag;
-
-	selectPolygon(mag, mask);
-
-	mag = mag.mul(mask);
-
-	proceMag = mag * 255;
-	imwrite("处理后频谱.jpg", proceMag);
-
-	//前述步骤反着来一遍，目的是为了逆变换回原图
-	Mat q00(mag, Rect(0, 0, cx, cy));
-	Mat q10(mag, Rect(cx, 0, cx, cy));
-	Mat q20(mag, Rect(0, cy, cx, cy));
-	Mat q30(mag, Rect(cx, cy, cx, cy));
-
-	//交换象限
-	q00.copyTo(tmp);
-	q30.copyTo(q00);
-	tmp.copyTo(q30);
-	q10.copyTo(tmp);
-	q20.copyTo(q10);
-	tmp.copyTo(q20);
-
-	mag = mag * maxVal;//将归一化的矩阵还原 
-	exp(mag, mag);//对应于前述去对数
-	mag = mag - Scalar::all(1);//对应前述+1
-	polarToCart(mag, ph, planes[0], planes[1]);//由幅度谱mag和相位谱ph恢复实部planes[0]和虚部planes[1]
-	merge(planes, 2, complexImg);//将实部虚部合并
-
-
-	//-----------------------傅里叶的逆变换-----------------------------------
-	Mat ifft(Size(src.cols, src.rows), CV_8UC1);
-	//傅里叶逆变换
-	idft(complexImg, ifft, DFT_REAL_OUTPUT);
-	normalize(ifft, ifft, 0, 1, CV_MINMAX);
-
-	Rect rect(0, 0, src.cols, src.rows);
-	dst = ifft(rect);
-	dst = dst * 255;
-
-	cv::Mat dspMat;
-	dst.convertTo(dspMat, CV_8UC1);
-	imshow("dst", dspMat);
-	imshow("src", src);
-	waitKey(0);
-
-	return 0;
-
 }

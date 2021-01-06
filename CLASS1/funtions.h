@@ -1,17 +1,23 @@
 #pragma once
+#include "parameters.h"
 #include <opencv.hpp>
+#include <dnn.hpp>
 
 using namespace cv;
 using namespace std;
-
-int removeFrequnce();
-int dftDemo();
-int ifftDemo();
-int mouseROI();
+using namespace dnn;
 
 
-void on_mouse(int EVENT, int x, int y, int flags, void* userdata);
-int selectPolygon(cv::Mat srcMat, cv::Mat& dstMat);
-int calcVisibalMag(cv::Mat srcMat, cv::Mat& dstMat);
-int calcVisbalDft(cv::Mat srcMat, cv::Mat& magMat, cv::Mat& ph, double& normVal);
-int calcDft2Image(cv::Mat magMat, cv::Mat ph, double normVal, cv::Mat & dstMat); 
+//通过非极大值抑制去掉置信度较低的bouding box
+void postprocess(cv::Mat& frame, std::vector<cv::Mat>& outs);
+
+// 获得输出名字
+std::vector<cv::String> getOutputsNames(const cv::dnn::Net& net);
+
+
+//绘制检测结果
+void drawPred(int classId, float conf, int left, int top, int right, int bottom, cv::Mat& frame);
+
+int yoloV3();
+
+int openpose();
