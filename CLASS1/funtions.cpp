@@ -136,9 +136,9 @@ void drawPred(int classId, float conf, int left, int top, int right, int bottom,
 int yoloV3()
 {
 	//yolov3网络模型文件
-	String yolov3_model = "D:\\yolov3.cfg";
+	String yolov3_model = "D:\\image\\class15\\yolov3.cfg";
 	//权重
-	String weights = "D:\\yolov3.weights";
+	String weights = "D:\\image\\class15\\yolov3.weights";
 	cv::dnn::Net net = cv::dnn::readNetFromDarknet(yolov3_model, weights);
 
 	VideoCapture cap(YOLOV3_VIDEO);
